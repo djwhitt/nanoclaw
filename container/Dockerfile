@@ -27,7 +27,13 @@ RUN apt-get update && apt-get install -y \
     plantuml \
     graphviz \
     gnuplot-nox \
+    sqlite3 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install DuckDB CLI
+RUN curl -L https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip \
+    -o /tmp/duckdb.zip && unzip /tmp/duckdb.zip -d /usr/local/bin/ && rm /tmp/duckdb.zip
 
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
