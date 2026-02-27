@@ -86,7 +86,16 @@ vi.mock('discord.js', () => {
   // Mock TextChannel type
   class TextChannel {}
 
+  // Mock AttachmentBuilder
+  class AttachmentBuilder {
+    filePath: string;
+    constructor(filePath: string) {
+      this.filePath = filePath;
+    }
+  }
+
   return {
+    AttachmentBuilder,
     Client: MockClient,
     Events,
     GatewayIntentBits,
@@ -683,6 +692,73 @@ describe('DiscordChannel', () => {
       expect(mockChannel.send).toHaveBeenCalledTimes(2);
       expect(mockChannel.send).toHaveBeenNthCalledWith(1, 'x'.repeat(2000));
       expect(mockChannel.send).toHaveBeenNthCalledWith(2, 'x'.repeat(1000));
+    });
+  });
+
+  // --- sendFile ---
+
+  describe('sendFile', () => {
+    it('sends file as attachment without caption', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockChannel = {
+        send: vi.fn().mockResolvedValue(undefined),
+        sendTyping: vi.fn(),
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      await channel.sendFile('dc:1234567890123456', '/tmp/diagram.png');
+
+      expect(currentClient().channels.fetch).toHaveBeenCalledWith('1234567890123456');
+      expect(mockChannel.send).toHaveBeenCalledWith({
+        content: undefined,
+        files: [expect.objectContaining({ filePath: '/tmp/diagram.png' })],
+      });
+    });
+
+    it('sends file as attachment with caption', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockChannel = {
+        send: vi.fn().mockResolvedValue(undefined),
+        sendTyping: vi.fn(),
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      await channel.sendFile('dc:1234567890123456', '/tmp/diagram.png', 'Here is your diagram');
+
+      expect(mockChannel.send).toHaveBeenCalledWith({
+        content: 'Here is your diagram',
+        files: [expect.objectContaining({ filePath: '/tmp/diagram.png' })],
+      });
+    });
+
+    it('does nothing when client is not initialized', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+
+      // Don't connect — client is null
+      await channel.sendFile('dc:1234567890123456', '/tmp/diagram.png');
+
+      // No error, no API call
+    });
+
+    it('handles send failure gracefully', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      currentClient().channels.fetch.mockRejectedValueOnce(
+        new Error('Channel not found'),
+      );
+
+      await expect(
+        channel.sendFile('dc:1234567890123456', '/tmp/diagram.png'),
+      ).resolves.toBeUndefined();
     });
   });
 

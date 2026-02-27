@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     curl \
     git \
+    default-jre-headless \
+    plantuml \
+    graphviz \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chromium path for agent-browser

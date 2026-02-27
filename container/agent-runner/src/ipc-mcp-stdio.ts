@@ -63,6 +63,54 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  `Send a file to the user or group as an attachment (e.g., images, documents, diagrams).
+
+PLANTUML WORKFLOW — To generate and send diagrams:
+1. Write PlantUML source to a .puml file in /workspace/group/
+2. Render it: plantuml -tpng diagram.puml (produces diagram.png)
+3. Send it: use this tool with file_path "diagram.png"
+
+You can also render SVG with: plantuml -tsvg diagram.puml`,
+  {
+    file_path: z.string().describe('File path relative to /workspace/group/ (e.g., "diagram.png", "output/chart.png")'),
+    caption: z.string().optional().describe('Optional caption/message to include with the file'),
+  },
+  async (args) => {
+    const groupDir = '/workspace/group';
+    const resolvedPath = path.resolve(groupDir, args.file_path);
+    // Defense in depth: verify path doesn't escape workspace
+    const relative = path.relative(groupDir, resolvedPath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return {
+        content: [{ type: 'text' as const, text: `File path must be within /workspace/group/. Got: "${args.file_path}"` }],
+        isError: true,
+      };
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return {
+        content: [{ type: 'text' as const, text: `File not found: "${resolvedPath}". Make sure the file exists before sending.` }],
+        isError: true,
+      };
+    }
+
+    const data = {
+      type: 'file',
+      chatJid,
+      filePath: args.file_path,
+      caption: args.caption || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File "${args.file_path}" sent.` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
 

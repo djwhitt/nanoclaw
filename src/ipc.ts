@@ -11,12 +11,13 @@ import {
 } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
-import { isValidGroupFolder } from './group-folder.js';
+import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendFile: (jid: string, filePath: string, caption?: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -88,6 +89,40 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   logger.warn(
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
+                  );
+                }
+              } else if (data.type === 'file' && data.chatJid && data.filePath) {
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  // Resolve file path relative to group workspace
+                  const groupDir = resolveGroupFolderPath(sourceGroup);
+                  const resolvedPath = path.resolve(groupDir, data.filePath);
+                  // Guard against path traversal
+                  const relative = path.relative(groupDir, resolvedPath);
+                  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+                    logger.warn(
+                      { filePath: data.filePath, sourceGroup },
+                      'IPC file path traversal blocked',
+                    );
+                  } else if (!fs.existsSync(resolvedPath)) {
+                    logger.warn(
+                      { filePath: resolvedPath, sourceGroup },
+                      'IPC file not found',
+                    );
+                  } else {
+                    await deps.sendFile(data.chatJid, resolvedPath, data.caption);
+                    logger.info(
+                      { chatJid: data.chatJid, filePath: resolvedPath, sourceGroup },
+                      'IPC file sent',
+                    );
+                  }
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC file attempt blocked',
                   );
                 }
               }

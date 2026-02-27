@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, Message, TextChannel } from 'discord.js';
+import { AttachmentBuilder, Client, Events, GatewayIntentBits, Message, TextChannel } from 'discord.js';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { logger } from '../logger.js';
@@ -218,6 +218,32 @@ export class DiscordChannel implements Channel {
       this.client.destroy();
       this.client = null;
       logger.info('Discord bot stopped');
+    }
+  }
+
+  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+    if (!this.client) {
+      logger.warn('Discord client not initialized');
+      return;
+    }
+
+    try {
+      const channelId = jid.replace(/^dc:/, '');
+      const channel = await this.client.channels.fetch(channelId);
+
+      if (!channel || !('send' in channel)) {
+        logger.warn({ jid }, 'Discord channel not found or not text-based');
+        return;
+      }
+
+      const textChannel = channel as TextChannel;
+      await textChannel.send({
+        content: caption || undefined,
+        files: [new AttachmentBuilder(filePath)],
+      });
+      logger.info({ jid, filePath }, 'Discord file sent');
+    } catch (err) {
+      logger.error({ jid, filePath, err }, 'Failed to send Discord file');
     }
   }
 

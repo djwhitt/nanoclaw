@@ -18,6 +18,8 @@ Your output is sent to the user or group.
 
 You also have `mcp__nanoclaw__send_message` which sends a message immediately while you're still working. This is useful when you want to acknowledge a request before starting longer work.
 
+To send files (images, diagrams, documents), use `mcp__nanoclaw__send_file`. For diagrams, write a `.puml` file, render with `plantuml -tpng diagram.puml`, then send with `send_file`.
+
 ### Internal thoughts
 
 If part of your output is internal reasoning rather than something for the user, wrap it in `<internal>` tags:
