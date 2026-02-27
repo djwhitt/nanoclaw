@@ -18,7 +18,10 @@ Your output is sent to the user or group.
 
 You also have `mcp__nanoclaw__send_message` which sends a message immediately while you're still working. This is useful when you want to acknowledge a request before starting longer work.
 
-To send files (images, diagrams, documents), use `mcp__nanoclaw__send_file`. For diagrams, write a `.puml` file, render with `plantuml -tpng diagram.puml`, then send with `send_file`.
+To send files (images, diagrams, documents), use `mcp__nanoclaw__send_file`. For diagrams, write source in /workspace/group/, render to PNG, then send:
+- PlantUML: `plantuml -tpng diagram.puml`
+- Graphviz: `dot -Tpng graph.dot -o graph.png`
+- Gnuplot: use `set terminal pngcairo; set output "chart.png"` in script, then `gnuplot script.gp`
 
 ### Internal thoughts
 

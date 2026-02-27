@@ -67,12 +67,13 @@ server.tool(
   'send_file',
   `Send a file to the user or group as an attachment (e.g., images, documents, diagrams).
 
-PLANTUML WORKFLOW — To generate and send diagrams:
-1. Write PlantUML source to a .puml file in /workspace/group/
-2. Render it: plantuml -tpng diagram.puml (produces diagram.png)
-3. Send it: use this tool with file_path "diagram.png"
+DIAGRAM WORKFLOWS — Write source, render to PNG, then send with this tool:
 
-You can also render SVG with: plantuml -tsvg diagram.puml`,
+PlantUML: plantuml -tpng diagram.puml → sends diagram.png
+Graphviz: dot -Tpng graph.dot -o graph.png (also: neato, fdp, circo, sfdp)
+Gnuplot:  gnuplot script.gp (set terminal pngcairo; set output "chart.png" in script)
+
+All source files should be written in /workspace/group/.`,
   {
     file_path: z.string().describe('File path relative to /workspace/group/ (e.g., "diagram.png", "output/chart.png")'),
     caption: z.string().optional().describe('Optional caption/message to include with the file'),

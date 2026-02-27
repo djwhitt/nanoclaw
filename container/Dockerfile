@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     default-jre-headless \
     plantuml \
     graphviz \
+    gnuplot-nox \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chromium path for agent-browser
