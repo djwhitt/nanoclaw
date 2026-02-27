@@ -65,15 +65,7 @@ server.tool(
 
 server.tool(
   'send_file',
-  `Send a file to the user or group as an attachment (e.g., images, documents, diagrams).
-
-DIAGRAM WORKFLOWS — Write source, render to PNG, then send with this tool:
-
-PlantUML: plantuml -tpng diagram.puml → sends diagram.png
-Graphviz: dot -Tpng graph.dot -o graph.png (also: neato, fdp, circo, sfdp)
-Gnuplot:  gnuplot script.gp (set terminal pngcairo; set output "chart.png" in script)
-
-All source files should be written in /workspace/group/.`,
+  'Send a file to the user or group as an attachment (e.g., images, documents, diagrams).',
   {
     file_path: z.string().describe('File path relative to /workspace/group/ (e.g., "diagram.png", "output/chart.png")'),
     caption: z.string().optional().describe('Optional caption/message to include with the file'),
