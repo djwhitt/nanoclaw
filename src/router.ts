@@ -1,4 +1,4 @@
-import { Channel, NewMessage } from './types.js';
+import { Channel, MessageAttachment, NewMessage } from './types.js';
 
 export function escapeXml(s: string): string {
   if (!s) return '';
@@ -54,4 +54,19 @@ export function findChannel(
   jid: string,
 ): Channel | undefined {
   return channels.find((c) => c.ownsJid(jid));
+}
+
+export function collectAttachments(messages: NewMessage[]): MessageAttachment[] {
+  const seen = new Set<string>();
+  const result: MessageAttachment[] = [];
+  for (const msg of messages) {
+    if (!msg.attachments) continue;
+    for (const att of msg.attachments) {
+      if (!seen.has(att.path)) {
+        seen.add(att.path);
+        result.push(att);
+      }
+    }
+  }
+  return result;
 }

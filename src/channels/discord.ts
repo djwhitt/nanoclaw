@@ -12,13 +12,18 @@ import {
   TextChannel,
 } from 'discord.js';
 
-import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
+import fs from 'fs';
+import path from 'path';
+
+import { ASSISTANT_NAME, MAX_ATTACHMENT_DOWNLOAD_SIZE, TRIGGER_PATTERN } from '../config.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import {
   Channel,
   IpcActionRow,
   IpcButton,
   IpcStringSelect,
+  MessageAttachment,
   OnChatMetadata,
   OnInboundMessage,
   RegisteredGroup,
@@ -99,27 +104,6 @@ export class DiscordChannel implements Channel {
         }
       }
 
-      // Handle attachments — store placeholders so the agent knows something was sent
-      if (message.attachments.size > 0) {
-        const attachmentDescriptions = [...message.attachments.values()].map((att) => {
-          const contentType = att.contentType || '';
-          if (contentType.startsWith('image/')) {
-            return `[Image: ${att.name || 'image'}]`;
-          } else if (contentType.startsWith('video/')) {
-            return `[Video: ${att.name || 'video'}]`;
-          } else if (contentType.startsWith('audio/')) {
-            return `[Audio: ${att.name || 'audio'}]`;
-          } else {
-            return `[File: ${att.name || 'file'}]`;
-          }
-        });
-        if (content) {
-          content = `${content}\n${attachmentDescriptions.join('\n')}`;
-        } else {
-          content = attachmentDescriptions.join('\n');
-        }
-      }
-
       // Handle reply context — include who the user is replying to
       if (message.reference?.messageId) {
         try {
@@ -149,6 +133,85 @@ export class DiscordChannel implements Channel {
         return;
       }
 
+      // Handle attachments — download to group inbox for registered groups
+      let attachments: MessageAttachment[] | undefined;
+      if (message.attachments.size > 0) {
+        const groupDir = resolveGroupFolderPath(group.folder);
+        const inboxDir = path.join(groupDir, 'inbox');
+        fs.mkdirSync(inboxDir, { recursive: true });
+
+        const descriptions: string[] = [];
+        const downloaded: MessageAttachment[] = [];
+
+        for (const att of message.attachments.values()) {
+          const contentType = att.contentType || 'application/octet-stream';
+          const name = att.name || 'file';
+          const size = att.size || 0;
+          const isImage = contentType.startsWith('image/');
+
+          if (size > MAX_ATTACHMENT_DOWNLOAD_SIZE) {
+            descriptions.push(`[File too large: ${name} (${Math.round(size / 1024 / 1024)}MB, max ${Math.round(MAX_ATTACHMENT_DOWNLOAD_SIZE / 1024 / 1024)}MB)]`);
+            continue;
+          }
+
+          const sanitizedName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const ts = Date.now();
+          const destFilename = `${ts}-${sanitizedName}`;
+          const destPath = path.join(inboxDir, destFilename);
+          const relativePath = `inbox/${destFilename}`;
+
+          try {
+            const response = await fetch(att.url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            fs.writeFileSync(destPath, buffer);
+
+            downloaded.push({
+              filename: name,
+              path: relativePath,
+              mimeType: contentType,
+              size: buffer.length,
+              isImage,
+            });
+
+            if (isImage) {
+              descriptions.push(`[Image: ${name} → ${relativePath}]`);
+            } else {
+              descriptions.push(`[File: ${name} → ${relativePath}]`);
+            }
+
+            logger.debug(
+              { chatJid, filename: name, size: buffer.length, relativePath },
+              'Discord attachment downloaded',
+            );
+          } catch (err) {
+            logger.warn(
+              { chatJid, filename: name, err },
+              'Failed to download Discord attachment',
+            );
+            // Fall back to placeholder
+            if (isImage) {
+              descriptions.push(`[Image: ${name}]`);
+            } else if (contentType.startsWith('video/')) {
+              descriptions.push(`[Video: ${name}]`);
+            } else if (contentType.startsWith('audio/')) {
+              descriptions.push(`[Audio: ${name}]`);
+            } else {
+              descriptions.push(`[File: ${name}]`);
+            }
+          }
+        }
+
+        if (descriptions.length > 0) {
+          content = content
+            ? `${content}\n${descriptions.join('\n')}`
+            : descriptions.join('\n');
+        }
+        if (downloaded.length > 0) {
+          attachments = downloaded;
+        }
+      }
+
       // Deliver message — startMessageLoop() will pick it up
       this.opts.onMessage(chatJid, {
         id: msgId,
@@ -158,6 +221,7 @@ export class DiscordChannel implements Channel {
         content,
         timestamp,
         is_from_me: false,
+        attachments,
       });
 
       logger.info(

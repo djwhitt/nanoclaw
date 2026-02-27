@@ -19,6 +19,14 @@ import path from 'path';
 import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
+interface MessageAttachment {
+  filename: string;
+  path: string;
+  mimeType: string;
+  size: number;
+  isImage: boolean;
+}
+
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -28,6 +36,7 @@ interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  attachments?: MessageAttachment[];
 }
 
 interface ContainerOutput {
@@ -48,13 +57,18 @@ interface SessionsIndex {
   entries: SessionEntry[];
 }
 
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+
 interface SDKUserMessage {
   type: 'user';
-  message: { role: 'user'; content: string };
+  message: { role: 'user'; content: string | ContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
 }
 
+const MAX_IMAGE_INLINE_SIZE = 10 * 1024 * 1024; // 10MB
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
@@ -72,6 +86,16 @@ class MessageStream {
     this.queue.push({
       type: 'user',
       message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+      session_id: '',
+    });
+    this.waiting?.();
+  }
+
+  pushWithContent(content: ContentBlock[]): void {
+    this.queue.push({
+      type: 'user',
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: '',
     });
@@ -363,7 +387,36 @@ async function runQuery(
   resumeAt?: string,
 ): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
   const stream = new MessageStream();
-  stream.push(prompt);
+
+  // Build content blocks with inline images if attachments are present
+  const imageAttachments = (containerInput.attachments || []).filter(
+    (att) => att.isImage && att.size <= MAX_IMAGE_INLINE_SIZE,
+  );
+  if (imageAttachments.length > 0) {
+    const blocks: ContentBlock[] = [{ type: 'text', text: prompt }];
+    for (const att of imageAttachments) {
+      const filePath = path.join('/workspace/group', att.path);
+      try {
+        const data = fs.readFileSync(filePath).toString('base64');
+        blocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: att.mimeType,
+            data,
+          },
+        });
+        log(`Inlined image: ${att.path} (${att.size} bytes)`);
+      } catch (err) {
+        log(`Failed to read image ${att.path}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    stream.pushWithContent(blocks);
+    // Clear attachments after first query — only relevant for initial prompt
+    containerInput.attachments = undefined;
+  } else {
+    stream.push(prompt);
+  }
 
   // Poll IPC for follow-up messages and _close sentinel during the query
   let ipcPolling = true;

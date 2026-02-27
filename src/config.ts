@@ -67,6 +67,10 @@ export const TRIGGER_PATTERN = new RegExp(
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+// Attachment size limits
+export const MAX_ATTACHMENT_DOWNLOAD_SIZE = 25 * 1024 * 1024; // 25MB
+export const MAX_IMAGE_INLINE_SIZE = 10 * 1024 * 1024; // 10MB for base64 pass-through
+
 // Discord configuration
 export const DISCORD_BOT_TOKEN =
   process.env.DISCORD_BOT_TOKEN || envConfig.DISCORD_BOT_TOKEN || '';
