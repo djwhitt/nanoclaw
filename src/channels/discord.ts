@@ -1,9 +1,24 @@
-import { AttachmentBuilder, Client, Events, GatewayIntentBits, Message, TextChannel } from 'discord.js';
+import {
+  ActionRowBuilder,
+  AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Client,
+  Events,
+  GatewayIntentBits,
+  Message,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  TextChannel,
+} from 'discord.js';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { logger } from '../logger.js';
 import {
   Channel,
+  IpcActionRow,
+  IpcButton,
+  IpcStringSelect,
   OnChatMetadata,
   OnInboundMessage,
   RegisteredGroup,
@@ -151,6 +166,56 @@ export class DiscordChannel implements Channel {
       );
     });
 
+    // Handle button clicks and select menu interactions
+    this.client.on(Events.InteractionCreate, async (interaction) => {
+      if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+
+      // Acknowledge immediately (meet Discord's 3-second deadline, no visual change)
+      await interaction.deferUpdate();
+
+      const channelId = interaction.channelId;
+      const chatJid = `dc:${channelId}`;
+      const userName =
+        interaction.member && 'displayName' in interaction.member
+          ? (interaction.member.displayName as string)
+          : interaction.user.displayName || interaction.user.username;
+      const messageId = interaction.message.id;
+
+      // Build synthetic message content
+      let syntheticContent: string;
+      if (interaction.isButton()) {
+        syntheticContent = `@${ASSISTANT_NAME} [Button: ${interaction.customId} "${(interaction.component as any).label ?? interaction.customId}" by ${userName} on message ${messageId}]`;
+      } else {
+        const values = JSON.stringify(interaction.values);
+        syntheticContent = `@${ASSISTANT_NAME} [Select: ${interaction.customId} values=${values} by ${userName} on message ${messageId}]`;
+      }
+
+      // Only deliver for registered groups
+      const group = this.opts.registeredGroups()[chatJid];
+      if (!group) {
+        logger.debug(
+          { chatJid },
+          'Interaction from unregistered Discord channel, ignoring',
+        );
+        return;
+      }
+
+      this.opts.onMessage(chatJid, {
+        id: interaction.id,
+        chat_jid: chatJid,
+        sender: interaction.user.id,
+        sender_name: userName,
+        content: syntheticContent,
+        timestamp: new Date().toISOString(),
+        is_from_me: false,
+      });
+
+      logger.info(
+        { chatJid, customId: interaction.isButton() ? interaction.customId : interaction.customId, userName },
+        'Discord interaction delivered',
+      );
+    });
+
     // Handle errors gracefully
     this.client.on(Events.Error, (err) => {
       logger.error({ err: err.message }, 'Discord client error');
@@ -259,4 +324,81 @@ export class DiscordChannel implements Channel {
       logger.debug({ jid, err }, 'Failed to send Discord typing indicator');
     }
   }
+
+  async sendComponents(jid: string, text: string, components: IpcActionRow[]): Promise<string> {
+    if (!this.client) throw new Error('Discord client not initialized');
+
+    const channelId = jid.replace(/^dc:/, '');
+    const channel = await this.client.channels.fetch(channelId);
+    if (!channel || !('send' in channel)) {
+      throw new Error(`Discord channel not found or not text-based: ${jid}`);
+    }
+
+    const textChannel = channel as TextChannel;
+    const rows = components.map((row) => buildActionRow(row));
+    const sent = await textChannel.send({ content: text, components: rows });
+    logger.info({ jid, messageId: sent.id }, 'Discord components sent');
+    return sent.id;
+  }
+
+  async updateComponents(jid: string, messageId: string, text?: string, components?: IpcActionRow[]): Promise<void> {
+    if (!this.client) throw new Error('Discord client not initialized');
+
+    const channelId = jid.replace(/^dc:/, '');
+    const channel = await this.client.channels.fetch(channelId);
+    if (!channel || !('send' in channel)) {
+      throw new Error(`Discord channel not found or not text-based: ${jid}`);
+    }
+
+    const textChannel = channel as TextChannel;
+    const message = await textChannel.messages.fetch(messageId);
+
+    const editPayload: { content?: string; components?: ActionRowBuilder<any>[] } = {};
+    if (text !== undefined) editPayload.content = text;
+    if (components !== undefined) editPayload.components = components.map((row) => buildActionRow(row));
+
+    await message.edit(editPayload);
+    logger.info({ jid, messageId }, 'Discord components updated');
+  }
+}
+
+const STYLE_MAP: Record<string, ButtonStyle> = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+};
+
+function buildActionRow(row: IpcActionRow): ActionRowBuilder<any> {
+  const actionRow = new ActionRowBuilder();
+  for (const comp of row.components) {
+    if (comp.type === 'button') {
+      const btn = comp as IpcButton;
+      const builder = new ButtonBuilder()
+        .setCustomId(btn.custom_id)
+        .setLabel(btn.label)
+        .setStyle(STYLE_MAP[btn.style || 'primary'] || ButtonStyle.Primary);
+      if (btn.disabled) builder.setDisabled(true);
+      actionRow.addComponents(builder);
+    } else if (comp.type === 'string_select') {
+      const sel = comp as IpcStringSelect;
+      const builder = new StringSelectMenuBuilder()
+        .setCustomId(sel.custom_id);
+      if (sel.placeholder) builder.setPlaceholder(sel.placeholder);
+      if (sel.min_values !== undefined) builder.setMinValues(sel.min_values);
+      if (sel.max_values !== undefined) builder.setMaxValues(sel.max_values);
+      if (sel.disabled) builder.setDisabled(true);
+      builder.addOptions(
+        sel.options.map((opt) => {
+          const optBuilder = new StringSelectMenuOptionBuilder()
+            .setLabel(opt.label)
+            .setValue(opt.value);
+          if (opt.description) optBuilder.setDescription(opt.description);
+          return optBuilder;
+        }),
+      );
+      actionRow.addComponents(builder);
+    }
+  }
+  return actionRow as ActionRowBuilder<any>;
 }

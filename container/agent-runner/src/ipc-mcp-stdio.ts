@@ -14,6 +14,7 @@ import { CronExpressionParser } from 'cron-parser';
 const IPC_DIR = '/workspace/ipc';
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
+const RESPONSES_DIR = path.join(IPC_DIR, 'responses');
 
 // Context from environment variables (set by the agent runner)
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
@@ -325,6 +326,141 @@ Use available_groups.json to find the JID for a group. The folder name should be
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
     };
+  },
+);
+
+// --- Discord UI components ---
+
+const IpcButtonSchema = z.object({
+  type: z.literal('button'),
+  custom_id: z.string(),
+  label: z.string(),
+  style: z.enum(['primary', 'secondary', 'success', 'danger']).optional(),
+  disabled: z.boolean().optional(),
+});
+
+const IpcSelectOptionSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  description: z.string().optional(),
+});
+
+const IpcStringSelectSchema = z.object({
+  type: z.literal('string_select'),
+  custom_id: z.string(),
+  placeholder: z.string().optional(),
+  min_values: z.number().optional(),
+  max_values: z.number().optional(),
+  options: z.array(IpcSelectOptionSchema),
+  disabled: z.boolean().optional(),
+});
+
+const IpcActionRowSchema = z.object({
+  type: z.literal('action_row'),
+  components: z.array(z.union([IpcButtonSchema, IpcStringSelectSchema])),
+});
+
+server.tool(
+  'send_components',
+  `Send a Discord message with interactive buttons and/or select menus. Discord only (chatJid must start with "dc:").
+
+Returns the Discord message ID, which you'll need for update_components and to correlate button clicks.
+
+When a user clicks a button or selects from a menu, you'll receive a synthetic message like:
+- Button: @${process.env.NANOCLAW_ASSISTANT_NAME || 'Claw'} [Button: custom_id "Label" by UserName on message 1234567890]
+- Select: @${process.env.NANOCLAW_ASSISTANT_NAME || 'Claw'} [Select: custom_id values=["val1"] by UserName on message 1234567890]
+
+COMPONENT RULES:
+- Each action_row can contain up to 5 buttons OR 1 select menu (not both)
+- Up to 5 action_rows per message
+- custom_id must be unique within the message`,
+  {
+    text: z.string().describe('Message text to display above the components'),
+    components: z.array(IpcActionRowSchema).describe('Array of action rows containing buttons and/or select menus'),
+  },
+  async (args) => {
+    if (!chatJid.startsWith('dc:')) {
+      return {
+        content: [{ type: 'text' as const, text: 'send_components is only supported for Discord channels (chatJid must start with "dc:").' }],
+        isError: true,
+      };
+    }
+
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const data = {
+      type: 'components',
+      chatJid,
+      text: args.text,
+      components: args.components,
+      requestId,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    // Poll for response file containing the Discord message ID
+    const responseFile = path.join(RESPONSES_DIR, `${requestId}.json`);
+    const pollInterval = 200;
+    const timeout = 10_000;
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+      if (fs.existsSync(responseFile)) {
+        try {
+          const response = JSON.parse(fs.readFileSync(responseFile, 'utf-8'));
+          fs.unlinkSync(responseFile);
+          return {
+            content: [{ type: 'text' as const, text: `Components sent. Message ID: ${response.messageId}` }],
+          };
+        } catch {
+          // File may be partially written, retry
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: `Components sent but could not confirm message ID (timed out after ${timeout / 1000}s). The message was likely delivered.` }],
+    };
+  },
+);
+
+server.tool(
+  'update_components',
+  `Update an existing Discord message's text and/or components. Use this to:
+- Remove buttons after a user clicks one (pass empty components array)
+- Change button labels/styles (e.g., disable clicked button)
+- Update the message text to reflect the user's choice
+
+Requires the message ID returned by send_components.`,
+  {
+    message_id: z.string().describe('The Discord message ID to update (returned by send_components)'),
+    text: z.string().optional().describe('New message text (omit to keep existing text)'),
+    components: z.array(IpcActionRowSchema).optional().describe('New components (omit to keep existing, pass empty array to remove all)'),
+  },
+  async (args) => {
+    if (!chatJid.startsWith('dc:')) {
+      return {
+        content: [{ type: 'text' as const, text: 'update_components is only supported for Discord channels (chatJid must start with "dc:").' }],
+        isError: true,
+      };
+    }
+
+    const data: Record<string, unknown> = {
+      type: 'update_components',
+      chatJid,
+      messageId: args.message_id,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+    if (args.text !== undefined) data.text = args.text;
+    if (args.components !== undefined) data.components = args.components;
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `Components update requested for message ${args.message_id}.` }] };
   },
 );
 

@@ -507,6 +507,18 @@ async function main(): Promise<void> {
       return channel.sendMessage(jid, text);
     },
     sendFile: (jid, filePath, caption) => routeFile(channels, jid, filePath, caption),
+    sendComponents: (jid, text, components) => {
+      const channel = findChannel(channels, jid);
+      if (!channel) throw new Error(`No channel for JID: ${jid}`);
+      if (!channel.sendComponents) throw new Error(`Channel ${channel.name} does not support components`);
+      return channel.sendComponents(jid, text, components);
+    },
+    updateComponents: (jid, messageId, text, components) => {
+      const channel = findChannel(channels, jid);
+      if (!channel) throw new Error(`No channel for JID: ${jid}`);
+      if (!channel.updateComponents) throw new Error(`Channel ${channel.name} does not support updateComponents`);
+      return channel.updateComponents(jid, messageId, text, components);
+    },
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroupMetadata: (force) =>

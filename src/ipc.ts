@@ -13,11 +13,13 @@ import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
-import { RegisteredGroup } from './types.js';
+import { IpcActionRow, RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
   sendFile: (jid: string, filePath: string, caption?: string) => Promise<void>;
+  sendComponents: (jid: string, text: string, components: IpcActionRow[]) => Promise<string>;
+  updateComponents: (jid: string, messageId: string, text?: string, components?: IpcActionRow[]) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -125,6 +127,83 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC file attempt blocked',
                   );
                 }
+              } else if (data.type === 'components' && data.chatJid && data.components) {
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  try {
+                    const messageId = await deps.sendComponents(
+                      data.chatJid,
+                      data.text || '',
+                      data.components,
+                    );
+                    // Write response file with messageId
+                    if (data.requestId) {
+                      const responsesDir = path.join(
+                        ipcBaseDir,
+                        sourceGroup,
+                        'responses',
+                      );
+                      fs.mkdirSync(responsesDir, { recursive: true });
+                      const responseFile = path.join(
+                        responsesDir,
+                        `${data.requestId}.json`,
+                      );
+                      fs.writeFileSync(
+                        responseFile,
+                        JSON.stringify({
+                          requestId: data.requestId,
+                          messageId,
+                        }),
+                      );
+                    }
+                    logger.info(
+                      { chatJid: data.chatJid, messageId, sourceGroup },
+                      'IPC components sent',
+                    );
+                  } catch (err) {
+                    logger.error(
+                      { chatJid: data.chatJid, sourceGroup, err },
+                      'Failed to send IPC components',
+                    );
+                  }
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC components attempt blocked',
+                  );
+                }
+              } else if (data.type === 'update_components' && data.chatJid && data.messageId) {
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  try {
+                    await deps.updateComponents(
+                      data.chatJid,
+                      data.messageId,
+                      data.text,
+                      data.components,
+                    );
+                    logger.info(
+                      { chatJid: data.chatJid, messageId: data.messageId, sourceGroup },
+                      'IPC components updated',
+                    );
+                  } catch (err) {
+                    logger.error(
+                      { chatJid: data.chatJid, messageId: data.messageId, sourceGroup, err },
+                      'Failed to update IPC components',
+                    );
+                  }
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC update_components attempt blocked',
+                  );
+                }
               }
               fs.unlinkSync(filePath);
             } catch (err) {
@@ -177,6 +256,23 @@ export function startIpcWatcher(deps: IpcDeps): void {
         }
       } catch (err) {
         logger.error({ err, sourceGroup }, 'Error reading IPC tasks directory');
+      }
+
+      // Clean up stale response files (older than 60 seconds)
+      const responsesDir = path.join(ipcBaseDir, sourceGroup, 'responses');
+      try {
+        if (fs.existsSync(responsesDir)) {
+          const now = Date.now();
+          for (const file of fs.readdirSync(responsesDir)) {
+            const fp = path.join(responsesDir, file);
+            const stat = fs.statSync(fp);
+            if (now - stat.mtimeMs > 60_000) {
+              fs.unlinkSync(fp);
+            }
+          }
+        }
+      } catch (err) {
+        logger.debug({ err, sourceGroup }, 'Error cleaning stale response files');
       }
     }
 

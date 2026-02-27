@@ -29,6 +29,7 @@ vi.mock('discord.js', () => {
     MessageCreate: 'messageCreate',
     ClientReady: 'ready',
     Error: 'error',
+    InteractionCreate: 'interactionCreate',
   };
 
   const GatewayIntentBits = {
@@ -36,6 +37,13 @@ vi.mock('discord.js', () => {
     GuildMessages: 2,
     MessageContent: 4,
     DirectMessages: 8,
+  };
+
+  const ButtonStyle = {
+    Primary: 1,
+    Secondary: 2,
+    Success: 3,
+    Danger: 4,
   };
 
   class MockClient {
@@ -73,8 +81,13 @@ vi.mock('discord.js', () => {
 
     channels = {
       fetch: vi.fn().mockResolvedValue({
-        send: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockResolvedValue({ id: 'sent_msg_001' }),
         sendTyping: vi.fn().mockResolvedValue(undefined),
+        messages: {
+          fetch: vi.fn().mockResolvedValue({
+            edit: vi.fn().mockResolvedValue(undefined),
+          }),
+        },
       }),
     };
 
@@ -94,11 +107,51 @@ vi.mock('discord.js', () => {
     }
   }
 
+  // Mock component builders
+  class ActionRowBuilder {
+    _components: any[] = [];
+    addComponents(...components: any[]) {
+      this._components.push(...components);
+      return this;
+    }
+  }
+
+  class ButtonBuilder {
+    _data: any = {};
+    setCustomId(id: string) { this._data.customId = id; return this; }
+    setLabel(label: string) { this._data.label = label; return this; }
+    setStyle(style: number) { this._data.style = style; return this; }
+    setDisabled(disabled: boolean) { this._data.disabled = disabled; return this; }
+  }
+
+  class StringSelectMenuBuilder {
+    _data: any = {};
+    _options: any[] = [];
+    setCustomId(id: string) { this._data.customId = id; return this; }
+    setPlaceholder(ph: string) { this._data.placeholder = ph; return this; }
+    setMinValues(n: number) { this._data.minValues = n; return this; }
+    setMaxValues(n: number) { this._data.maxValues = n; return this; }
+    setDisabled(disabled: boolean) { this._data.disabled = disabled; return this; }
+    addOptions(...opts: any[]) { this._options.push(...opts); return this; }
+  }
+
+  class StringSelectMenuOptionBuilder {
+    _data: any = {};
+    setLabel(label: string) { this._data.label = label; return this; }
+    setValue(value: string) { this._data.value = value; return this; }
+    setDescription(desc: string) { this._data.description = desc; return this; }
+  }
+
   return {
+    ActionRowBuilder,
     AttachmentBuilder,
+    ButtonBuilder,
+    ButtonStyle,
     Client: MockClient,
     Events,
     GatewayIntentBits,
+    StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder,
     TextChannel,
   };
 });
@@ -191,6 +244,65 @@ function currentClient() {
 async function triggerMessage(message: any) {
   const handlers = currentClient().eventHandlers.get('messageCreate') || [];
   for (const h of handlers) await h(message);
+}
+
+async function triggerInteraction(interaction: any) {
+  const handlers = currentClient().eventHandlers.get('interactionCreate') || [];
+  for (const h of handlers) await h(interaction);
+}
+
+function createButtonInteraction(overrides: {
+  channelId?: string;
+  customId?: string;
+  label?: string;
+  userId?: string;
+  userName?: string;
+  messageId?: string;
+}) {
+  return {
+    channelId: overrides.channelId ?? '1234567890123456',
+    customId: overrides.customId ?? 'approve',
+    id: 'interaction_001',
+    user: {
+      id: overrides.userId ?? '55512345',
+      username: overrides.userName ?? 'alice',
+      displayName: overrides.userName ?? 'Alice',
+    },
+    member: overrides.userName ? { displayName: overrides.userName } : null,
+    message: { id: overrides.messageId ?? 'comp_msg_001' },
+    component: { label: overrides.label ?? 'Approve' },
+    values: undefined,
+    isButton: () => true,
+    isStringSelectMenu: () => false,
+    deferUpdate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function createSelectInteraction(overrides: {
+  channelId?: string;
+  customId?: string;
+  values?: string[];
+  userId?: string;
+  userName?: string;
+  messageId?: string;
+}) {
+  return {
+    channelId: overrides.channelId ?? '1234567890123456',
+    customId: overrides.customId ?? 'priority',
+    id: 'interaction_002',
+    user: {
+      id: overrides.userId ?? '55512345',
+      username: overrides.userName ?? 'alice',
+      displayName: overrides.userName ?? 'Alice',
+    },
+    member: overrides.userName ? { displayName: overrides.userName } : null,
+    message: { id: overrides.messageId ?? 'comp_msg_001' },
+    component: {},
+    values: overrides.values ?? ['high'],
+    isButton: () => false,
+    isStringSelectMenu: () => true,
+    deferUpdate: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 // --- Tests ---
@@ -824,6 +936,166 @@ describe('DiscordChannel', () => {
       await channel.setTyping('dc:1234567890123456', true);
 
       // No error
+    });
+  });
+
+  // --- sendComponents ---
+
+  describe('sendComponents', () => {
+    it('sends message with component builders and returns message ID', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockChannel = {
+        send: vi.fn().mockResolvedValue({ id: 'sent_comp_001' }),
+        sendTyping: vi.fn(),
+        messages: { fetch: vi.fn() },
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      const messageId = await channel.sendComponents('dc:1234567890123456', 'Choose:', [
+        {
+          type: 'action_row',
+          components: [
+            { type: 'button', custom_id: 'approve', label: 'Approve', style: 'success' },
+            { type: 'button', custom_id: 'reject', label: 'Reject', style: 'danger' },
+          ],
+        },
+      ]);
+
+      expect(messageId).toBe('sent_comp_001');
+      expect(mockChannel.send).toHaveBeenCalledWith({
+        content: 'Choose:',
+        components: expect.any(Array),
+      });
+      // Verify action rows were built
+      const callArgs = mockChannel.send.mock.calls[0][0];
+      expect(callArgs.components).toHaveLength(1);
+    });
+  });
+
+  // --- updateComponents ---
+
+  describe('updateComponents', () => {
+    it('fetches message and calls edit with correct payload', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockEdit = vi.fn().mockResolvedValue(undefined);
+      const mockChannel = {
+        send: vi.fn(),
+        sendTyping: vi.fn(),
+        messages: {
+          fetch: vi.fn().mockResolvedValue({ edit: mockEdit }),
+        },
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      await channel.updateComponents('dc:1234567890123456', 'msg_to_update', 'Approved!', []);
+
+      expect(mockChannel.messages.fetch).toHaveBeenCalledWith('msg_to_update');
+      expect(mockEdit).toHaveBeenCalledWith({
+        content: 'Approved!',
+        components: [],
+      });
+    });
+
+    it('omits content when text is undefined', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockEdit = vi.fn().mockResolvedValue(undefined);
+      const mockChannel = {
+        send: vi.fn(),
+        sendTyping: vi.fn(),
+        messages: {
+          fetch: vi.fn().mockResolvedValue({ edit: mockEdit }),
+        },
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      await channel.updateComponents('dc:1234567890123456', 'msg_to_update', undefined, []);
+
+      expect(mockEdit).toHaveBeenCalledWith({
+        components: [],
+      });
+    });
+  });
+
+  // --- InteractionCreate ---
+
+  describe('InteractionCreate', () => {
+    it('calls deferUpdate and delivers synthetic message for button click', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const interaction = createButtonInteraction({
+        customId: 'approve',
+        label: 'Approve',
+        userName: 'Alice',
+        messageId: 'comp_msg_001',
+      });
+      await triggerInteraction(interaction);
+
+      expect(interaction.deferUpdate).toHaveBeenCalled();
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'dc:1234567890123456',
+        expect.objectContaining({
+          content: '@Andy [Button: approve "Approve" by Alice on message comp_msg_001]',
+          sender: '55512345',
+          sender_name: 'Alice',
+          is_from_me: false,
+        }),
+      );
+    });
+
+    it('includes select values in synthetic message', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const interaction = createSelectInteraction({
+        customId: 'priority',
+        values: ['high', 'urgent'],
+        userName: 'Alice',
+        messageId: 'comp_msg_002',
+      });
+      await triggerInteraction(interaction);
+
+      expect(interaction.deferUpdate).toHaveBeenCalled();
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'dc:1234567890123456',
+        expect.objectContaining({
+          content: '@Andy [Select: priority values=["high","urgent"] by Alice on message comp_msg_002]',
+        }),
+      );
+    });
+
+    it('ignores interactions from unregistered channels', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const interaction = createButtonInteraction({
+        channelId: '9999999999999999',
+        customId: 'approve',
+      });
+      await triggerInteraction(interaction);
+
+      expect(interaction.deferUpdate).toHaveBeenCalled();
+      expect(opts.onMessage).not.toHaveBeenCalled();
+    });
+
+    it('registers InteractionCreate handler on connect', async () => {
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      expect(currentClient().eventHandlers.has('interactionCreate')).toBe(true);
     });
   });
 

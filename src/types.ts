@@ -76,6 +76,39 @@ export interface TaskRunLog {
   error: string | null;
 }
 
+// --- IPC component types (shared between host and container) ---
+
+export interface IpcButton {
+  type: 'button';
+  custom_id: string;
+  label: string;
+  style?: 'primary' | 'secondary' | 'success' | 'danger';
+  disabled?: boolean;
+}
+
+export interface IpcSelectOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface IpcStringSelect {
+  type: 'string_select';
+  custom_id: string;
+  placeholder?: string;
+  min_values?: number;
+  max_values?: number;
+  options: IpcSelectOption[];
+  disabled?: boolean;
+}
+
+export type IpcComponent = IpcButton | IpcStringSelect;
+
+export interface IpcActionRow {
+  type: 'action_row';
+  components: IpcComponent[];
+}
+
 // --- Channel abstraction ---
 
 export interface Channel {
@@ -89,6 +122,10 @@ export interface Channel {
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
   // Optional: send a file as an attachment. Channels that support it implement it.
   sendFile?(jid: string, filePath: string, caption?: string): Promise<void>;
+  // Optional: send a message with interactive components (buttons, select menus).
+  sendComponents?(jid: string, text: string, components: IpcActionRow[]): Promise<string>;
+  // Optional: update an existing message's text and/or components.
+  updateComponents?(jid: string, messageId: string, text?: string, components?: IpcActionRow[]): Promise<void>;
 }
 
 // Callback type that channels use to deliver inbound messages
