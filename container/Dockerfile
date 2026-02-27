@@ -35,6 +35,10 @@ RUN apt-get update && apt-get install -y \
 RUN curl -L https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip \
     -o /tmp/duckdb.zip && unzip /tmp/duckdb.zip -d /usr/local/bin/ && rm /tmp/duckdb.zip
 
+# Install hledger CLI
+RUN curl -L https://github.com/simonmichael/hledger/releases/latest/download/hledger-linux-x64.tar.gz \
+    -o /tmp/hledger.tar.gz && tar xzf /tmp/hledger.tar.gz -C /usr/local/bin/ && rm /tmp/hledger.tar.gz
+
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
