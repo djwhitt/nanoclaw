@@ -69,6 +69,17 @@ interface SDKUserMessage {
 }
 
 const MAX_IMAGE_INLINE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/** Detect actual image MIME type from magic bytes (Discord's contentType can lie). */
+function detectImageMimeType(buf: Buffer): string | null {
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
+  return null;
+}
+
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
@@ -397,16 +408,20 @@ async function runQuery(
     for (const att of imageAttachments) {
       const filePath = path.join('/workspace/group', att.path);
       try {
-        const data = fs.readFileSync(filePath).toString('base64');
+        const buf = fs.readFileSync(filePath);
+        const detectedType = detectImageMimeType(buf) || att.mimeType;
+        if (detectedType !== att.mimeType) {
+          log(`MIME type mismatch for ${att.path}: Discord said ${att.mimeType}, detected ${detectedType}`);
+        }
         blocks.push({
           type: 'image',
           source: {
             type: 'base64',
-            media_type: att.mimeType,
-            data,
+            media_type: detectedType,
+            data: buf.toString('base64'),
           },
         });
-        log(`Inlined image: ${att.path} (${att.size} bytes)`);
+        log(`Inlined image: ${att.path} (${att.size} bytes, ${detectedType})`);
       } catch (err) {
         log(`Failed to read image ${att.path}: ${err instanceof Error ? err.message : String(err)}`);
       }
