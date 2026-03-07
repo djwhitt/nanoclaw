@@ -15,7 +15,11 @@ import {
 import fs from 'fs';
 import path from 'path';
 
-import { ASSISTANT_NAME, MAX_ATTACHMENT_DOWNLOAD_SIZE, TRIGGER_PATTERN } from '../config.js';
+import {
+  ASSISTANT_NAME,
+  MAX_ATTACHMENT_DOWNLOAD_SIZE,
+  TRIGGER_PATTERN,
+} from '../config.js';
 import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import {
@@ -28,6 +32,7 @@ import {
   OnInboundMessage,
   RegisteredGroup,
 } from '../types.js';
+import { registerChannel } from './registry.js';
 
 export interface DiscordChannelOpts {
   onMessage: OnInboundMessage;
@@ -150,7 +155,9 @@ export class DiscordChannel implements Channel {
           const isImage = contentType.startsWith('image/');
 
           if (size > MAX_ATTACHMENT_DOWNLOAD_SIZE) {
-            descriptions.push(`[File too large: ${name} (${Math.round(size / 1024 / 1024)}MB, max ${Math.round(MAX_ATTACHMENT_DOWNLOAD_SIZE / 1024 / 1024)}MB)]`);
+            descriptions.push(
+              `[File too large: ${name} (${Math.round(size / 1024 / 1024)}MB, max ${Math.round(MAX_ATTACHMENT_DOWNLOAD_SIZE / 1024 / 1024)}MB)]`,
+            );
             continue;
           }
 
@@ -275,7 +282,13 @@ export class DiscordChannel implements Channel {
       });
 
       logger.info(
-        { chatJid, customId: interaction.isButton() ? interaction.customId : interaction.customId, userName },
+        {
+          chatJid,
+          customId: interaction.isButton()
+            ? interaction.customId
+            : interaction.customId,
+          userName,
+        },
         'Discord interaction delivered',
       );
     });
@@ -350,7 +363,11 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+  async sendFile(
+    jid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
@@ -389,7 +406,11 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendComponents(jid: string, text: string, components: IpcActionRow[]): Promise<string> {
+  async sendComponents(
+    jid: string,
+    text: string,
+    components: IpcActionRow[],
+  ): Promise<string> {
     if (!this.client) throw new Error('Discord client not initialized');
 
     const channelId = jid.replace(/^dc:/, '');
@@ -405,7 +426,12 @@ export class DiscordChannel implements Channel {
     return sent.id;
   }
 
-  async updateComponents(jid: string, messageId: string, text?: string, components?: IpcActionRow[]): Promise<void> {
+  async updateComponents(
+    jid: string,
+    messageId: string,
+    text?: string,
+    components?: IpcActionRow[],
+  ): Promise<void> {
     if (!this.client) throw new Error('Discord client not initialized');
 
     const channelId = jid.replace(/^dc:/, '');
@@ -417,9 +443,13 @@ export class DiscordChannel implements Channel {
     const textChannel = channel as TextChannel;
     const message = await textChannel.messages.fetch(messageId);
 
-    const editPayload: { content?: string; components?: ActionRowBuilder<any>[] } = {};
+    const editPayload: {
+      content?: string;
+      components?: ActionRowBuilder<any>[];
+    } = {};
     if (text !== undefined) editPayload.content = text;
-    if (components !== undefined) editPayload.components = components.map((row) => buildActionRow(row));
+    if (components !== undefined)
+      editPayload.components = components.map((row) => buildActionRow(row));
 
     await message.edit(editPayload);
     logger.info({ jid, messageId }, 'Discord components updated');
@@ -446,8 +476,7 @@ function buildActionRow(row: IpcActionRow): ActionRowBuilder<any> {
       actionRow.addComponents(builder);
     } else if (comp.type === 'string_select') {
       const sel = comp as IpcStringSelect;
-      const builder = new StringSelectMenuBuilder()
-        .setCustomId(sel.custom_id);
+      const builder = new StringSelectMenuBuilder().setCustomId(sel.custom_id);
       if (sel.placeholder) builder.setPlaceholder(sel.placeholder);
       if (sel.min_values !== undefined) builder.setMinValues(sel.min_values);
       if (sel.max_values !== undefined) builder.setMaxValues(sel.max_values);
@@ -466,3 +495,9 @@ function buildActionRow(row: IpcActionRow): ActionRowBuilder<any> {
   }
   return actionRow as ActionRowBuilder<any>;
 }
+
+registerChannel('discord', (opts) => {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token) return null;
+  return new DiscordChannel(token, opts);
+});
