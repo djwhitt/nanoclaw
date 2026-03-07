@@ -96,11 +96,17 @@ export function commitCustomize(): void {
     const currentPath = path.join(cwd, relativePath);
 
     // Use /dev/null if either side doesn't exist
-    const oldPath = fs.existsSync(basePath) ? basePath : '/dev/null';
+    const baseExists = fs.existsSync(basePath);
+    if (baseExists && !fs.statSync(basePath).isFile()) {
+      throw new Error(
+        `diff error for ${relativePath}: base path is not a regular file`,
+      );
+    }
+    const oldPath = baseExists ? basePath : '/dev/null';
     const newPath = fs.existsSync(currentPath) ? currentPath : '/dev/null';
 
     try {
-      const diff = execFileSync('diff', ['-ruN', oldPath, newPath], {
+      const diff = execFileSync('diff', ['-uN', oldPath, newPath], {
         encoding: 'utf-8',
       });
       combinedPatch += diff;
