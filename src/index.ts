@@ -244,6 +244,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         resetIdleTimer();
       }
 
+      if (result.status === 'success') {
+        // Let the queue know this container is idle so pending tasks
+        // can preempt it instead of waiting for IDLE_TIMEOUT.
+        queue.notifyIdle(chatJid);
+      }
+
       if (result.status === 'error') {
         hadError = true;
       }
