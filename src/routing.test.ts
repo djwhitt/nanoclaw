@@ -63,8 +63,20 @@ describe('getAvailableGroups', () => {
   });
 
   it('includes Discord channel JIDs', () => {
-    storeChatMetadata('dc:1234567890123456', '2024-01-01T00:00:01.000Z', 'Discord Channel', 'discord', true);
-    storeChatMetadata('user@s.whatsapp.net', '2024-01-01T00:00:02.000Z', 'User DM', 'whatsapp', false);
+    storeChatMetadata(
+      'dc:1234567890123456',
+      '2024-01-01T00:00:01.000Z',
+      'Discord Channel',
+      'discord',
+      true,
+    );
+    storeChatMetadata(
+      'user@s.whatsapp.net',
+      '2024-01-01T00:00:02.000Z',
+      'User DM',
+      'whatsapp',
+      false,
+    );
 
     const groups = getAvailableGroups();
     expect(groups).toHaveLength(1);
@@ -72,8 +84,20 @@ describe('getAvailableGroups', () => {
   });
 
   it('marks registered Discord channels correctly', () => {
-    storeChatMetadata('dc:1234567890123456', '2024-01-01T00:00:01.000Z', 'DC Registered', 'discord', true);
-    storeChatMetadata('dc:9999999999999999', '2024-01-01T00:00:02.000Z', 'DC Unregistered', 'discord', true);
+    storeChatMetadata(
+      'dc:1234567890123456',
+      '2024-01-01T00:00:01.000Z',
+      'DC Registered',
+      'discord',
+      true,
+    );
+    storeChatMetadata(
+      'dc:9999999999999999',
+      '2024-01-01T00:00:02.000Z',
+      'DC Unregistered',
+      'discord',
+      true,
+    );
 
     _setRegisteredGroups({
       'dc:1234567890123456': {
@@ -204,9 +228,27 @@ describe('getAvailableGroups', () => {
   });
 
   it('mixes WhatsApp and Discord chats ordered by activity', () => {
-    storeChatMetadata('wa@g.us', '2024-01-01T00:00:01.000Z', 'WhatsApp', 'whatsapp', true);
-    storeChatMetadata('dc:555', '2024-01-01T00:00:03.000Z', 'Discord', 'discord', true);
-    storeChatMetadata('wa2@g.us', '2024-01-01T00:00:02.000Z', 'WhatsApp 2', 'whatsapp', true);
+    storeChatMetadata(
+      'wa@g.us',
+      '2024-01-01T00:00:01.000Z',
+      'WhatsApp',
+      'whatsapp',
+      true,
+    );
+    storeChatMetadata(
+      'dc:555',
+      '2024-01-01T00:00:03.000Z',
+      'Discord',
+      'discord',
+      true,
+    );
+    storeChatMetadata(
+      'wa2@g.us',
+      '2024-01-01T00:00:02.000Z',
+      'WhatsApp 2',
+      'whatsapp',
+      true,
+    );
 
     const groups = getAvailableGroups();
     expect(groups).toHaveLength(3);

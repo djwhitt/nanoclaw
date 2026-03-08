@@ -3,12 +3,7 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
-import {
-  DATA_DIR,
-  IPC_POLL_INTERVAL,
-  MAIN_GROUP_FOLDER,
-  TIMEZONE,
-} from './config.js';
+import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
@@ -18,11 +13,20 @@ import { IpcActionRow, RegisteredGroup } from './types.js';
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
   sendFile: (jid: string, filePath: string, caption?: string) => Promise<void>;
-  sendComponents: (jid: string, text: string, components: IpcActionRow[]) => Promise<string>;
-  updateComponents: (jid: string, messageId: string, text?: string, components?: IpcActionRow[]) => Promise<void>;
+  sendComponents: (
+    jid: string,
+    text: string,
+    components: IpcActionRow[],
+  ) => Promise<string>;
+  updateComponents: (
+    jid: string,
+    messageId: string,
+    text?: string,
+    components?: IpcActionRow[],
+  ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
-  syncGroupMetadata: (force: boolean) => Promise<void>;
+  syncGroups: (force: boolean) => Promise<void>;
   getAvailableGroups: () => AvailableGroup[];
   writeGroupsSnapshot: (
     groupFolder: string,
@@ -60,8 +64,14 @@ export function startIpcWatcher(deps: IpcDeps): void {
 
     const registeredGroups = deps.registeredGroups();
 
+    // Build folder→isMain lookup from registered groups
+    const folderIsMain = new Map<string, boolean>();
+    for (const group of Object.values(registeredGroups)) {
+      if (group.isMain) folderIsMain.set(group.folder, true);
+    }
+
     for (const sourceGroup of groupFolders) {
-      const isMain = sourceGroup === MAIN_GROUP_FOLDER;
+      const isMain = folderIsMain.get(sourceGroup) === true;
       const messagesDir = path.join(ipcBaseDir, sourceGroup, 'messages');
       const tasksDir = path.join(ipcBaseDir, sourceGroup, 'tasks');
 
@@ -93,7 +103,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC message attempt blocked',
                   );
                 }
-              } else if (data.type === 'file' && data.chatJid && data.filePath) {
+              } else if (
+                data.type === 'file' &&
+                data.chatJid &&
+                data.filePath
+              ) {
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
@@ -115,9 +129,17 @@ export function startIpcWatcher(deps: IpcDeps): void {
                       'IPC file not found',
                     );
                   } else {
-                    await deps.sendFile(data.chatJid, resolvedPath, data.caption);
+                    await deps.sendFile(
+                      data.chatJid,
+                      resolvedPath,
+                      data.caption,
+                    );
                     logger.info(
-                      { chatJid: data.chatJid, filePath: resolvedPath, sourceGroup },
+                      {
+                        chatJid: data.chatJid,
+                        filePath: resolvedPath,
+                        sourceGroup,
+                      },
                       'IPC file sent',
                     );
                   }
@@ -127,7 +149,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC file attempt blocked',
                   );
                 }
-              } else if (data.type === 'components' && data.chatJid && data.components) {
+              } else if (
+                data.type === 'components' &&
+                data.chatJid &&
+                data.components
+              ) {
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
@@ -175,7 +201,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC components attempt blocked',
                   );
                 }
-              } else if (data.type === 'update_components' && data.chatJid && data.messageId) {
+              } else if (
+                data.type === 'update_components' &&
+                data.chatJid &&
+                data.messageId
+              ) {
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
@@ -189,12 +219,21 @@ export function startIpcWatcher(deps: IpcDeps): void {
                       data.components,
                     );
                     logger.info(
-                      { chatJid: data.chatJid, messageId: data.messageId, sourceGroup },
+                      {
+                        chatJid: data.chatJid,
+                        messageId: data.messageId,
+                        sourceGroup,
+                      },
                       'IPC components updated',
                     );
                   } catch (err) {
                     logger.error(
-                      { chatJid: data.chatJid, messageId: data.messageId, sourceGroup, err },
+                      {
+                        chatJid: data.chatJid,
+                        messageId: data.messageId,
+                        sourceGroup,
+                        err,
+                      },
                       'Failed to update IPC components',
                     );
                   }
@@ -272,7 +311,10 @@ export function startIpcWatcher(deps: IpcDeps): void {
           }
         }
       } catch (err) {
-        logger.debug({ err, sourceGroup }, 'Error cleaning stale response files');
+        logger.debug(
+          { err, sourceGroup },
+          'Error cleaning stale response files',
+        );
       }
     }
 
@@ -366,18 +408,20 @@ export async function processTaskIpc(
           }
           nextRun = new Date(Date.now() + ms).toISOString();
         } else if (scheduleType === 'once') {
-          const scheduled = new Date(data.schedule_value);
-          if (isNaN(scheduled.getTime())) {
+          const date = new Date(data.schedule_value);
+          if (isNaN(date.getTime())) {
             logger.warn(
               { scheduleValue: data.schedule_value },
               'Invalid timestamp',
             );
             break;
           }
-          nextRun = scheduled.toISOString();
+          nextRun = date.toISOString();
         }
 
-        const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const taskId =
+          data.taskId ||
+          `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const contextMode =
           data.context_mode === 'group' || data.context_mode === 'isolated'
             ? data.context_mode
@@ -455,6 +499,70 @@ export async function processTaskIpc(
       }
       break;
 
+    case 'update_task':
+      if (data.taskId) {
+        const task = getTaskById(data.taskId);
+        if (!task) {
+          logger.warn(
+            { taskId: data.taskId, sourceGroup },
+            'Task not found for update',
+          );
+          break;
+        }
+        if (!isMain && task.group_folder !== sourceGroup) {
+          logger.warn(
+            { taskId: data.taskId, sourceGroup },
+            'Unauthorized task update attempt',
+          );
+          break;
+        }
+
+        const updates: Parameters<typeof updateTask>[1] = {};
+        if (data.prompt !== undefined) updates.prompt = data.prompt;
+        if (data.schedule_type !== undefined)
+          updates.schedule_type = data.schedule_type as
+            | 'cron'
+            | 'interval'
+            | 'once';
+        if (data.schedule_value !== undefined)
+          updates.schedule_value = data.schedule_value;
+
+        // Recompute next_run if schedule changed
+        if (data.schedule_type || data.schedule_value) {
+          const updatedTask = {
+            ...task,
+            ...updates,
+          };
+          if (updatedTask.schedule_type === 'cron') {
+            try {
+              const interval = CronExpressionParser.parse(
+                updatedTask.schedule_value,
+                { tz: TIMEZONE },
+              );
+              updates.next_run = interval.next().toISOString();
+            } catch {
+              logger.warn(
+                { taskId: data.taskId, value: updatedTask.schedule_value },
+                'Invalid cron in task update',
+              );
+              break;
+            }
+          } else if (updatedTask.schedule_type === 'interval') {
+            const ms = parseInt(updatedTask.schedule_value, 10);
+            if (!isNaN(ms) && ms > 0) {
+              updates.next_run = new Date(Date.now() + ms).toISOString();
+            }
+          }
+        }
+
+        updateTask(data.taskId, updates);
+        logger.info(
+          { taskId: data.taskId, sourceGroup, updates },
+          'Task updated via IPC',
+        );
+      }
+      break;
+
     case 'refresh_groups':
       // Only main group can request a refresh
       if (isMain) {
@@ -462,7 +570,7 @@ export async function processTaskIpc(
           { sourceGroup },
           'Group metadata refresh requested via IPC',
         );
-        await deps.syncGroupMetadata(true);
+        await deps.syncGroups(true);
         // Write updated snapshot immediately
         const availableGroups = deps.getAvailableGroups();
         deps.writeGroupsSnapshot(
@@ -496,6 +604,7 @@ export async function processTaskIpc(
           );
           break;
         }
+        // Defense in depth: agent cannot set isMain via IPC
         deps.registerGroup(data.jid, {
           name: data.name,
           folder: data.folder,

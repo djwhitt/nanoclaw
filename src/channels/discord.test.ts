@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 // --- Mocks ---
 
 // Mock config
-vi.mock('../config.js', () => ({
+vi.mock(import('../config.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
   ASSISTANT_NAME: 'Andy',
   TRIGGER_PATTERN: /^@Andy\b/i,
 }));
@@ -118,28 +119,67 @@ vi.mock('discord.js', () => {
 
   class ButtonBuilder {
     _data: any = {};
-    setCustomId(id: string) { this._data.customId = id; return this; }
-    setLabel(label: string) { this._data.label = label; return this; }
-    setStyle(style: number) { this._data.style = style; return this; }
-    setDisabled(disabled: boolean) { this._data.disabled = disabled; return this; }
+    setCustomId(id: string) {
+      this._data.customId = id;
+      return this;
+    }
+    setLabel(label: string) {
+      this._data.label = label;
+      return this;
+    }
+    setStyle(style: number) {
+      this._data.style = style;
+      return this;
+    }
+    setDisabled(disabled: boolean) {
+      this._data.disabled = disabled;
+      return this;
+    }
   }
 
   class StringSelectMenuBuilder {
     _data: any = {};
     _options: any[] = [];
-    setCustomId(id: string) { this._data.customId = id; return this; }
-    setPlaceholder(ph: string) { this._data.placeholder = ph; return this; }
-    setMinValues(n: number) { this._data.minValues = n; return this; }
-    setMaxValues(n: number) { this._data.maxValues = n; return this; }
-    setDisabled(disabled: boolean) { this._data.disabled = disabled; return this; }
-    addOptions(...opts: any[]) { this._options.push(...opts); return this; }
+    setCustomId(id: string) {
+      this._data.customId = id;
+      return this;
+    }
+    setPlaceholder(ph: string) {
+      this._data.placeholder = ph;
+      return this;
+    }
+    setMinValues(n: number) {
+      this._data.minValues = n;
+      return this;
+    }
+    setMaxValues(n: number) {
+      this._data.maxValues = n;
+      return this;
+    }
+    setDisabled(disabled: boolean) {
+      this._data.disabled = disabled;
+      return this;
+    }
+    addOptions(...opts: any[]) {
+      this._options.push(...opts);
+      return this;
+    }
   }
 
   class StringSelectMenuOptionBuilder {
     _data: any = {};
-    setLabel(label: string) { this._data.label = label; return this; }
-    setValue(value: string) { this._data.value = value; return this; }
-    setDescription(desc: string) { this._data.description = desc; return this; }
+    setLabel(label: string) {
+      this._data.label = label;
+      return this;
+    }
+    setValue(value: string) {
+      this._data.value = value;
+      return this;
+    }
+    setDescription(desc: string) {
+      this._data.description = desc;
+      return this;
+    }
   }
 
   return {
@@ -217,9 +257,7 @@ function createMessage(overrides: {
     member: overrides.memberDisplayName
       ? { displayName: overrides.memberDisplayName }
       : null,
-    guild: overrides.guildName
-      ? { name: overrides.guildName }
-      : null,
+    guild: overrides.guildName ? { name: overrides.guildName } : null,
     channel: {
       name: overrides.channelName ?? 'general',
       messages: {
@@ -748,8 +786,11 @@ describe('DiscordChannel', () => {
 
       await channel.sendMessage('dc:1234567890123456', 'Hello');
 
-      const fetchedChannel = await currentClient().channels.fetch('1234567890123456');
-      expect(currentClient().channels.fetch).toHaveBeenCalledWith('1234567890123456');
+      const fetchedChannel =
+        await currentClient().channels.fetch('1234567890123456');
+      expect(currentClient().channels.fetch).toHaveBeenCalledWith(
+        '1234567890123456',
+      );
     });
 
     it('strips dc: prefix from JID', async () => {
@@ -823,7 +864,9 @@ describe('DiscordChannel', () => {
 
       await channel.sendFile('dc:1234567890123456', '/tmp/diagram.png');
 
-      expect(currentClient().channels.fetch).toHaveBeenCalledWith('1234567890123456');
+      expect(currentClient().channels.fetch).toHaveBeenCalledWith(
+        '1234567890123456',
+      );
       expect(mockChannel.send).toHaveBeenCalledWith({
         content: undefined,
         files: [expect.objectContaining({ filePath: '/tmp/diagram.png' })],
@@ -841,7 +884,11 @@ describe('DiscordChannel', () => {
       };
       currentClient().channels.fetch.mockResolvedValue(mockChannel);
 
-      await channel.sendFile('dc:1234567890123456', '/tmp/diagram.png', 'Here is your diagram');
+      await channel.sendFile(
+        'dc:1234567890123456',
+        '/tmp/diagram.png',
+        'Here is your diagram',
+      );
 
       expect(mockChannel.send).toHaveBeenCalledWith({
         content: 'Here is your diagram',
@@ -954,15 +1001,29 @@ describe('DiscordChannel', () => {
       };
       currentClient().channels.fetch.mockResolvedValue(mockChannel);
 
-      const messageId = await channel.sendComponents('dc:1234567890123456', 'Choose:', [
-        {
-          type: 'action_row',
-          components: [
-            { type: 'button', custom_id: 'approve', label: 'Approve', style: 'success' },
-            { type: 'button', custom_id: 'reject', label: 'Reject', style: 'danger' },
-          ],
-        },
-      ]);
+      const messageId = await channel.sendComponents(
+        'dc:1234567890123456',
+        'Choose:',
+        [
+          {
+            type: 'action_row',
+            components: [
+              {
+                type: 'button',
+                custom_id: 'approve',
+                label: 'Approve',
+                style: 'success',
+              },
+              {
+                type: 'button',
+                custom_id: 'reject',
+                label: 'Reject',
+                style: 'danger',
+              },
+            ],
+          },
+        ],
+      );
 
       expect(messageId).toBe('sent_comp_001');
       expect(mockChannel.send).toHaveBeenCalledWith({
@@ -993,7 +1054,12 @@ describe('DiscordChannel', () => {
       };
       currentClient().channels.fetch.mockResolvedValue(mockChannel);
 
-      await channel.updateComponents('dc:1234567890123456', 'msg_to_update', 'Approved!', []);
+      await channel.updateComponents(
+        'dc:1234567890123456',
+        'msg_to_update',
+        'Approved!',
+        [],
+      );
 
       expect(mockChannel.messages.fetch).toHaveBeenCalledWith('msg_to_update');
       expect(mockEdit).toHaveBeenCalledWith({
@@ -1017,7 +1083,12 @@ describe('DiscordChannel', () => {
       };
       currentClient().channels.fetch.mockResolvedValue(mockChannel);
 
-      await channel.updateComponents('dc:1234567890123456', 'msg_to_update', undefined, []);
+      await channel.updateComponents(
+        'dc:1234567890123456',
+        'msg_to_update',
+        undefined,
+        [],
+      );
 
       expect(mockEdit).toHaveBeenCalledWith({
         components: [],
@@ -1045,7 +1116,8 @@ describe('DiscordChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'dc:1234567890123456',
         expect.objectContaining({
-          content: '@Andy [Button: approve "Approve" by Alice on message comp_msg_001]',
+          content:
+            '@Andy [Button: approve "Approve" by Alice on message comp_msg_001]',
           sender: '55512345',
           sender_name: 'Alice',
           is_from_me: false,
@@ -1070,7 +1142,8 @@ describe('DiscordChannel', () => {
       expect(opts.onMessage).toHaveBeenCalledWith(
         'dc:1234567890123456',
         expect.objectContaining({
-          content: '@Andy [Select: priority values=["high","urgent"] by Alice on message comp_msg_002]',
+          content:
+            '@Andy [Select: priority values=["high","urgent"] by Alice on message comp_msg_002]',
         }),
       );
     });
