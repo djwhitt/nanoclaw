@@ -45,15 +45,20 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
-## WhatsApp Formatting (and other messaging apps)
+## Discord Formatting
 
-Do NOT use markdown headings (##) in WhatsApp messages. Only use:
-- *Bold* (single asterisks) (NEVER **double asterisks**)
-- _Italic_ (underscores)
-- • Bullets (bullet points)
-- ```Code blocks``` (triple backticks)
+Use Discord markdown:
+- **double asterisks** for bold
+- *single asterisks* for italic
+- __double underscores__ for underline (NOT bold)
+- ~~double tildes~~ for strikethrough
+- `backticks` for inline code, triple backticks for code blocks
+- > for block quotes, >>> for multi-line block quotes
+- # ## ### for headers (must have a space after #)
+- - or * for unordered lists; 1. for ordered lists
+- [text](url) for masked links
 
-Keep messages clean and readable for WhatsApp.
+Gotchas: single asterisks are italic not bold; __underscores__ are underline not bold; tables and images are NOT supported; # without a space after it looks like a broken channel link.
 
 ---
 
@@ -97,7 +102,7 @@ Available groups are provided in `/workspace/ipc/available_groups.json`:
 }
 ```
 
-Groups are ordered by most recent activity. The list is synced from WhatsApp daily.
+Groups are ordered by most recent activity. The list is synced daily.
 
 If a group the user mentions isn't in the list, request a fresh sync:
 
@@ -113,7 +118,7 @@ Then wait a moment and re-read `available_groups.json`.
 sqlite3 /workspace/project/store/messages.db "
   SELECT jid, name, last_message_time
   FROM chats
-  WHERE jid LIKE '%@g.us' AND jid != '__group_sync__'
+  WHERE jid LIKE 'dc:%'
   ORDER BY last_message_time DESC
   LIMIT 10;
 "
@@ -121,25 +126,20 @@ sqlite3 /workspace/project/store/messages.db "
 
 ### Registered Groups Config
 
-Groups are registered in `/workspace/project/data/registered_groups.json`:
+Groups are registered in the `registered_groups` table in the SQLite database:
 
-```json
-{
-  "1234567890-1234567890@g.us": {
-    "name": "Family Chat",
-    "folder": "family-chat",
-    "trigger": "@Andy",
-    "added_at": "2024-01-31T12:00:00.000Z"
-  }
-}
+```bash
+sqlite3 /workspace/project/store/messages.db "SELECT jid, name, folder, is_main, container_config FROM registered_groups"
 ```
 
 Fields:
-- **Key**: The WhatsApp JID (unique identifier for the chat)
+- **jid**: Channel identifier (e.g., `dc:1234567890` for Discord)
 - **name**: Display name for the group
 - **folder**: Folder name under `groups/` for this group's files and memory
-- **trigger**: The trigger word (usually same as global, but could differ)
-- **requiresTrigger**: Whether `@trigger` prefix is needed (default: `true`). Set to `false` for solo/personal chats where all messages should be processed
+- **trigger_pattern**: The trigger word (usually same as global, but could differ)
+- **requires_trigger**: Whether trigger prefix is needed (default: `true`). Set to `false` for solo/personal chats where all messages should be processed
+- **is_main**: Whether this is the main/admin group
+- **container_config**: JSON with optional `additionalMounts`
 - **added_at**: ISO timestamp when registered
 
 ### Trigger Behavior
@@ -151,53 +151,48 @@ Fields:
 ### Adding a Group
 
 1. Query the database to find the group's JID
-2. Read `/workspace/project/data/registered_groups.json`
-3. Add the new group entry with `containerConfig` if needed
-4. Write the updated JSON back
-5. Create the group folder: `/workspace/project/groups/{folder-name}/`
-6. Optionally create an initial `CLAUDE.md` for the group
+2. Insert into the `registered_groups` table
+3. Create the group folder: `/workspace/project/groups/{folder-name}/`
+4. Optionally create an initial `CLAUDE.md` for the group
+
+```bash
+sqlite3 /workspace/project/store/messages.db "
+  INSERT INTO registered_groups (jid, name, folder, trigger_pattern, added_at, requires_trigger)
+  VALUES ('dc:1234567890', 'Dev Team', 'discord_dev-team', '@Claw', datetime('now'), 1)
+"
+```
 
 Example folder name conventions:
-- "Family Chat" → `family-chat`
-- "Work Team" → `work-team`
+- Discord channels: `discord_channel-name`
 - Use lowercase, hyphens instead of spaces
 
 #### Adding Additional Directories for a Group
 
-Groups can have extra directories mounted. Add `containerConfig` to their entry:
+Groups can have extra directories mounted via `container_config`:
 
-```json
-{
-  "1234567890@g.us": {
-    "name": "Dev Team",
-    "folder": "dev-team",
-    "trigger": "@Andy",
-    "added_at": "2026-01-31T12:00:00Z",
-    "containerConfig": {
-      "additionalMounts": [
-        {
-          "hostPath": "~/projects/webapp",
-          "containerPath": "webapp",
-          "readonly": false
-        }
-      ]
-    }
-  }
-}
+```bash
+sqlite3 /workspace/project/store/messages.db "
+  UPDATE registered_groups
+  SET container_config = '{\"additionalMounts\":[{\"hostPath\":\"~/projects/webapp\",\"containerPath\":\"webapp\",\"readonly\":false}]}'
+  WHERE folder = 'discord_dev-team'
+"
 ```
 
 The directory will appear at `/workspace/extra/webapp` in that group's container.
 
 ### Removing a Group
 
-1. Read `/workspace/project/data/registered_groups.json`
-2. Remove the entry for that group
-3. Write the updated JSON back
-4. The group folder and its files remain (don't delete them)
+```bash
+sqlite3 /workspace/project/store/messages.db "DELETE FROM registered_groups WHERE jid = 'dc:1234567890'"
+```
+
+The group folder and its files remain (don't delete them).
 
 ### Listing Groups
 
-Read `/workspace/project/data/registered_groups.json` and format it nicely.
+```bash
+sqlite3 /workspace/project/store/messages.db "SELECT jid, name, folder, is_main FROM registered_groups"
+```
 
 ---
 
@@ -210,6 +205,6 @@ You can read and write to `/workspace/project/groups/global/CLAUDE.md` for facts
 ## Scheduling for Other Groups
 
 When scheduling tasks for other groups, use the `target_group_jid` parameter with the group's JID from `registered_groups.json`:
-- `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group_jid: "120363336345536173@g.us")`
+- `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group_jid: "dc:1234567890")`
 
 The task will run in that group's context with access to their files and memory.

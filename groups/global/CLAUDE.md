@@ -51,10 +51,22 @@ When you learn something important:
 
 ## Message Formatting
 
-NEVER use markdown. Only use WhatsApp/Telegram formatting:
-- *single asterisks* for bold (NEVER **double asterisks**)
-- _underscores_ for italic
-- • bullet points
-- ```triple backticks``` for code
+Use Discord markdown:
+- **double asterisks** for bold
+- *single asterisks* for italic
+- __double underscores__ for underline (NOT bold)
+- ~~double tildes~~ for strikethrough
+- ||double pipes|| for spoilers
+- `backticks` for inline code, triple backticks for code blocks (with optional language)
+- > for block quotes, >>> for multi-line block quotes
+- # ## ### for headers (must be at line start with a space after #, or Discord treats # as a channel link attempt)
+- - or * for unordered lists; 1. for ordered lists; indent with 2 spaces per level
+- [text](url) for masked links; <url> to suppress embed preview
+- -# for subtext (small, muted)
 
-No ## headings. No [links](url). No **double stars**.
+Gotchas:
+- Single asterisks are italic, not bold — the opposite of WhatsApp
+- _underscores_ also produce italic, but __double underscores__ produce underline, not bold
+- Tables, images, horizontal rules, and HTML are NOT supported
+- Headers without a space after # (e.g. #general) look like broken channel links
+- A message that starts with a number and period (e.g. "1363. Alice") can be misread as a numbered list, adding unwanted line breaks
