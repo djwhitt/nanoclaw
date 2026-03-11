@@ -40,6 +40,10 @@ RUN curl -L https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli
 RUN curl -L https://github.com/simonmichael/hledger/releases/latest/download/hledger-linux-x64.tar.gz \
     -o /tmp/hledger.tar.gz && tar xzf /tmp/hledger.tar.gz -C /usr/local/bin/ && rm /tmp/hledger.tar.gz
 
+# Install Babashka (Clojure scripting runtime)
+RUN curl -sLO https://raw.githubusercontent.com/babashka/babashka/master/install && \
+    chmod +x install && ./install --dir /usr/local/bin && rm install
+
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
