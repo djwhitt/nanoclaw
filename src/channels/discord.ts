@@ -358,6 +358,10 @@ export class DiscordChannel implements Channel {
 
   async disconnect(): Promise<void> {
     if (this.client) {
+      for (const interval of this.typingIntervals.values()) {
+        clearInterval(interval);
+      }
+      this.typingIntervals.clear();
       this.client.destroy();
       this.client = null;
       logger.info('Discord bot stopped');
