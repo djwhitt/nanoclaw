@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     graphviz \
     gnuplot-nox \
     sqlite3 \
+    swi-prolog \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
