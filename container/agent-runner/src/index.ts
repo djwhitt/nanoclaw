@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
 interface MessageAttachment {
@@ -44,6 +44,13 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  totalCostUsd?: number;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  };
 }
 
 interface SessionEntry {
@@ -545,11 +552,24 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
-      writeOutput({
+      const output: ContainerOutput = {
         status: 'success',
         result: textResult || null,
-        newSessionId
-      });
+        newSessionId,
+      };
+      if (message.subtype === 'success') {
+        const result = message as SDKResultSuccess;
+        output.totalCostUsd = result.total_cost_usd;
+        const u = result.usage as Record<string, number>;
+        output.usage = {
+          input_tokens: u.input_tokens ?? 0,
+          output_tokens: u.output_tokens ?? 0,
+          cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+          cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+        };
+        log(`Cost: $${result.total_cost_usd.toFixed(4)}, tokens: in=${u.input_tokens} out=${u.output_tokens} cache_read=${u.cache_read_input_tokens} cache_create=${u.cache_creation_input_tokens}`);
+      }
+      writeOutput(output);
     }
   }
 

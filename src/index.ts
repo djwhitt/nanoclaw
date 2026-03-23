@@ -63,6 +63,7 @@ import {
   RegisteredGroup,
 } from './types.js';
 import { logger } from './logger.js';
+import { messagesReceived, messagesSent, shutdownMetrics } from './metrics.js';
 
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
@@ -197,6 +198,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     { group: group.name, messageCount: missedMessages.length },
     'Processing messages',
   );
+  messagesReceived.add(missedMessages.length, { group: group.name });
 
   // Track idle timer for closing stdin when agent is idle
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -237,6 +239,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         );
         if (text) {
           await channel.sendMessage(chatJid, text);
+          messagesSent.add(1, { group: group.name });
           outputSentToUser = true;
         }
         // Clear typing indicator — agent has produced output (even if internal-only)
@@ -500,6 +503,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
     await queue.shutdown(10000);
+    await shutdownMetrics();
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
   };

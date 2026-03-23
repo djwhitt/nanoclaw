@@ -19,6 +19,15 @@ import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
+  containerSpawns,
+  containerDuration,
+  tokensInput,
+  tokensOutput,
+  tokensCacheRead,
+  tokensCacheCreation,
+  costUsd,
+} from './metrics.js';
+import {
   CONTAINER_RUNTIME_BIN,
   readonlyMountArgs,
   stopContainer,
@@ -47,6 +56,13 @@ export interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  totalCostUsd?: number;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  };
 }
 
 interface VolumeMount {
@@ -316,6 +332,7 @@ export async function runContainerAgent(
     },
     'Spawning container agent',
   );
+  containerSpawns.add(1, { group: group.name });
 
   const logsDir = path.join(groupDir, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -383,6 +400,23 @@ export async function runContainerAgent(
             hadStreamingOutput = true;
             // Activity detected — reset the hard timeout
             resetTimeout();
+            // Emit token/cost metrics if present
+            if (parsed.usage) {
+              const attrs = { group: group.name };
+              tokensInput.add(parsed.usage.input_tokens || 0, attrs);
+              tokensOutput.add(parsed.usage.output_tokens || 0, attrs);
+              tokensCacheRead.add(
+                parsed.usage.cache_read_input_tokens || 0,
+                attrs,
+              );
+              tokensCacheCreation.add(
+                parsed.usage.cache_creation_input_tokens || 0,
+                attrs,
+              );
+            }
+            if (parsed.totalCostUsd) {
+              costUsd.add(parsed.totalCostUsd, { group: group.name });
+            }
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
@@ -478,6 +512,10 @@ export async function runContainerAgent(
             { group: group.name, containerName, duration, code },
             'Container timed out after output (idle cleanup)',
           );
+          containerDuration.record(duration, {
+            group: group.name,
+            status: 'success',
+          });
           outputChain.then(() => {
             resolve({
               status: 'success',
@@ -492,6 +530,10 @@ export async function runContainerAgent(
           { group: group.name, containerName, duration, code },
           'Container timed out with no output',
         );
+        containerDuration.record(duration, {
+          group: group.name,
+          status: 'timeout',
+        });
 
         resolve({
           status: 'error',
@@ -571,6 +613,10 @@ export async function runContainerAgent(
           },
           'Container exited with error',
         );
+        containerDuration.record(duration, {
+          group: group.name,
+          status: 'error',
+        });
 
         resolve({
           status: 'error',
@@ -587,6 +633,10 @@ export async function runContainerAgent(
             { group: group.name, duration, newSessionId },
             'Container completed (streaming mode)',
           );
+          containerDuration.record(duration, {
+            group: group.name,
+            status: 'success',
+          });
           resolve({
             status: 'success',
             result: null,

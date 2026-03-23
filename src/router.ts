@@ -1,5 +1,6 @@
 import { Channel, MessageAttachment, NewMessage } from './types.js';
 import { formatLocalTime } from './timezone.js';
+import { messagesSent } from './metrics.js';
 
 export function escapeXml(s: string): string {
   if (!s) return '';
@@ -41,6 +42,7 @@ export function routeOutbound(
 ): Promise<void> {
   const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
   if (!channel) throw new Error(`No channel for JID: ${jid}`);
+  messagesSent.add(1, { group: jid });
   return channel.sendMessage(jid, text);
 }
 
