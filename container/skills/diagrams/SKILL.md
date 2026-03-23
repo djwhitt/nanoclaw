@@ -1,16 +1,37 @@
 ---
 name: diagrams
-description: Render diagrams and charts with PlantUML, Graphviz, and Gnuplot. Write source files, render to PNG, then send via send_file.
-allowed-tools: Bash(plantuml:*) Bash(dot:*) Bash(neato:*) Bash(fdp:*) Bash(circo:*) Bash(sfdp:*) Bash(gnuplot:*)
+description: Render diagrams and charts with Mermaid, PlantUML, Graphviz, and Gnuplot. Write source files, render to PNG, then send via send_file.
+allowed-tools: Bash(mmdc:*) Bash(plantuml:*) Bash(dot:*) Bash(neato:*) Bash(fdp:*) Bash(circo:*) Bash(sfdp:*) Bash(gnuplot:*)
 ---
 
-# Diagrams: PlantUML, Graphviz & Gnuplot
+# Diagrams: Mermaid, PlantUML, Graphviz & Gnuplot
 
 ## Workflow
 
 1. Write source file in `/workspace/group/`
 2. Render to PNG
 3. Send via `mcp__nanoclaw__send_file`
+
+## Mermaid
+
+### Render
+
+```bash
+mmdc -i diagram.mmd -o diagram.png -b transparent
+# or SVG:
+mmdc -i diagram.mmd -o diagram.svg
+```
+
+### Example
+
+```mermaid
+graph LR
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action]
+    B -->|No| D[End]
+```
+
+Common diagram types: flowchart, sequence, class, state, ER, Gantt, pie, mindmap, timeline.
 
 ## PlantUML
 
