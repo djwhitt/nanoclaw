@@ -137,6 +137,17 @@ function buildVolumeMounts(
             // Enable Claude's memory feature (persists user preferences between sessions)
             // https://code.claude.com/docs/en/memory#manage-auto-memory
             CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+            // OpenTelemetry: export metrics and events from Claude Code
+            // https://code.claude.com/docs/en/monitoring-usage
+            CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+            OTEL_METRICS_EXPORTER: 'otlp',
+            OTEL_LOGS_EXPORTER: 'otlp',
+            OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc',
+            // OTEL_EXPORTER_OTLP_ENDPOINT is passed via container env var
+            OTEL_LOG_USER_PROMPTS: '1',
+            OTEL_LOG_TOOL_DETAILS: '1',
+            OTEL_METRIC_EXPORT_INTERVAL: '10000',
+            OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: 'cumulative',
           },
         },
         null,
@@ -233,6 +244,16 @@ function buildContainerArgs(
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
+
+  // Forward OTEL collector endpoint to containers and tag telemetry
+  if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    args.push(
+      '-e',
+      `OTEL_EXPORTER_OTLP_ENDPOINT=${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}`,
+      '-e',
+      `OTEL_RESOURCE_ATTRIBUTES=service.namespace=nanoclaw,service.instance.id=${containerName}`,
+    );
+  }
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),

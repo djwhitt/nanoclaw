@@ -14,9 +14,9 @@ if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
         {
           recordProcessorType: 'batch',
           exporterOptions: {
-            protocol: 'http',
-            httpExporterOptions: {
-              url: `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs`,
+            protocol: 'grpc',
+            grpcExporterOptions: {
+              url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
             },
           },
         },
