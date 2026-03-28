@@ -121,7 +121,6 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
-
   // Add is_main column if it doesn't exist (migration for existing DBs)
   try {
     database.exec(
