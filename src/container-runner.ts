@@ -34,7 +34,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { MessageAttachment, RegisteredGroup } from './types.js';
+import { MessageAttachment, RegisteredGroup, ScheduledTask } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -222,11 +222,14 @@ function buildVolumeMounts(
   if (fs.existsSync(agentRunnerSrc)) {
     const srcIndex = path.join(agentRunnerSrc, 'index.ts');
     const cachedIndex = path.join(groupAgentRunnerDir, 'index.ts');
-    const needsCopy =
-      !fs.existsSync(groupAgentRunnerDir) ||
-      !fs.existsSync(cachedIndex) ||
-      (fs.existsSync(srcIndex) &&
-        fs.statSync(srcIndex).mtimeMs > fs.statSync(cachedIndex).mtimeMs);
+    let needsCopy = true;
+    try {
+      const srcMtime = fs.statSync(srcIndex).mtimeMs;
+      const cachedMtime = fs.statSync(cachedIndex).mtimeMs;
+      needsCopy = srcMtime > cachedMtime;
+    } catch {
+      // source or cached doesn't exist → needs copy
+    }
     if (needsCopy) {
       fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
     }
@@ -577,9 +580,7 @@ export async function runContainerAgent(
       const isError = code !== 0;
 
       if (isVerbose || isError) {
-        // On error, log input metadata only — not the full prompt.
-        // Full input is only included at verbose level to avoid
-        // persisting user conversation content on every non-zero exit.
+        // Avoid persisting user conversation content in error logs.
         if (isVerbose) {
           logLines.push(`=== Input ===`, JSON.stringify(input, null, 2), ``);
         } else {
@@ -734,19 +735,34 @@ export async function runContainerAgent(
   });
 }
 
+export interface TaskSnapshotRow {
+  id: string;
+  groupFolder: string;
+  prompt: string;
+  script?: string;
+  schedule_type: string;
+  schedule_value: string;
+  status: string;
+  next_run: string | null;
+}
+
+export function toTaskSnapshotRows(tasks: ScheduledTask[]): TaskSnapshotRow[] {
+  return tasks.map((t) => ({
+    id: t.id,
+    groupFolder: t.group_folder,
+    prompt: t.prompt,
+    script: t.script || undefined,
+    schedule_type: t.schedule_type,
+    schedule_value: t.schedule_value,
+    status: t.status,
+    next_run: t.next_run,
+  }));
+}
+
 export function writeTasksSnapshot(
   groupFolder: string,
   isMain: boolean,
-  tasks: Array<{
-    id: string;
-    groupFolder: string;
-    prompt: string;
-    script?: string | null;
-    schedule_type: string;
-    schedule_value: string;
-    status: string;
-    next_run: string | null;
-  }>,
+  tasks: TaskSnapshotRow[],
 ): void {
   // Write filtered tasks to the group's IPC directory
   const groupIpcDir = resolveGroupIpcPath(groupFolder);

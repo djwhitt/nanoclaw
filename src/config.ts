@@ -68,15 +68,22 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function buildTriggerPattern(trigger: string): RegExp {
+function buildTriggerPattern(trigger: string): RegExp {
   return new RegExp(`^${escapeRegex(trigger.trim())}\\b`, 'i');
 }
 
 export const DEFAULT_TRIGGER = `@${ASSISTANT_NAME}`;
 
+const triggerPatternCache = new Map<string, RegExp>();
+
 export function getTriggerPattern(trigger?: string): RegExp {
-  const normalizedTrigger = trigger?.trim();
-  return buildTriggerPattern(normalizedTrigger || DEFAULT_TRIGGER);
+  const key = trigger?.trim() || DEFAULT_TRIGGER;
+  let re = triggerPatternCache.get(key);
+  if (!re) {
+    re = buildTriggerPattern(key);
+    triggerPatternCache.set(key, re);
+  }
+  return re;
 }
 
 export const TRIGGER_PATTERN = buildTriggerPattern(DEFAULT_TRIGGER);
