@@ -13,6 +13,8 @@ import {
 } from 'discord.js';
 
 import fs from 'fs';
+
+import { DISCORD_BOT_TOKEN } from '../config.js';
 import path from 'path';
 
 import {
@@ -518,7 +520,7 @@ function buildActionRow(row: IpcActionRow): ActionRowBuilder<any> {
 }
 
 registerChannel('discord', (opts) => {
-  const token = process.env.DISCORD_BOT_TOKEN;
+  const token = process.env.DISCORD_BOT_TOKEN || DISCORD_BOT_TOKEN;
   if (!token) return null;
   return new DiscordChannel(token, opts);
 });
