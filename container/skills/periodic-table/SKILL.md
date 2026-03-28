@@ -206,8 +206,6 @@ for g in range(1, 19):
     lines.append(f'set label {2200+g} "{g}" at {g},7.7 center font "Sans,9" tc rgb "#666666"')
 
 # f-block row labels and connector lines
-lines.append('set label 2001 "57-71" at 0.0,-0.5 center font "Sans,8" tc rgb "#666666"')
-lines.append('set label 2002 "89-103" at 0.0,-1.5 center font "Sans,8" tc rgb "#666666"')
 lines.append('set style arrow 1 nohead lc rgb "#AAAAAA" lw 0.5 dt 3')
 lines.append('set arrow 1 from 3.0,0.5 to 3.0,0.0 as 1')
 lines.append('set arrow 2 from 3.0,-1.0 to 3.0,-0.8 as 1')
