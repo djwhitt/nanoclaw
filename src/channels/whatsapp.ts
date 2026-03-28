@@ -69,8 +69,7 @@ function getMediaInfo(message: WAMessageContent): MediaInfo | null {
   if (message.documentMessage) {
     return {
       type: 'document',
-      mimetype:
-        message.documentMessage.mimetype || 'application/octet-stream',
+      mimetype: message.documentMessage.mimetype || 'application/octet-stream',
       fileLength: Number(message.documentMessage.fileLength || 0),
       filename: message.documentMessage.fileName || undefined,
       isImage: false,
@@ -493,7 +492,9 @@ export class WhatsAppChannel implements Channel {
         'WhatsApp attachment downloaded',
       );
 
-      const tag = media.isImage ? 'Image' : media.type.charAt(0).toUpperCase() + media.type.slice(1);
+      const tag = media.isImage
+        ? 'Image'
+        : media.type.charAt(0).toUpperCase() + media.type.slice(1);
       return {
         downloaded: {
           filename: name,
@@ -505,8 +506,13 @@ export class WhatsAppChannel implements Channel {
         description: `[${tag}: ${name} → ${relativePath}]`,
       };
     } catch (err) {
-      logger.warn({ filename: name, err }, 'Failed to download WhatsApp attachment');
-      const tag = media.isImage ? 'Image' : media.type.charAt(0).toUpperCase() + media.type.slice(1);
+      logger.warn(
+        { filename: name, err },
+        'Failed to download WhatsApp attachment',
+      );
+      const tag = media.isImage
+        ? 'Image'
+        : media.type.charAt(0).toUpperCase() + media.type.slice(1);
       return { description: `[${tag}: ${name}]` };
     }
   }
