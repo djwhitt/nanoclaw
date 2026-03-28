@@ -140,6 +140,7 @@ async function runTask(
       id: t.id,
       groupFolder: t.group_folder,
       prompt: t.prompt,
+      script: t.script,
       schedule_type: t.schedule_type,
       schedule_value: t.schedule_value,
       status: t.status,
@@ -180,6 +181,7 @@ async function runTask(
         isMain,
         isScheduledTask: true,
         assistantName: ASSISTANT_NAME,
+        script: task.script || undefined,
       },
       (proc, containerName) =>
         deps.onProcess(task.chat_jid, proc, containerName, task.group_folder),
@@ -192,6 +194,7 @@ async function runTask(
         }
         if (streamedOutput.status === 'success') {
           deps.queue.notifyIdle(task.chat_jid);
+          scheduleClose(); // Close promptly even when result is null (e.g. IPC-only tasks)
         }
         if (streamedOutput.status === 'error') {
           error = streamedOutput.error || 'Unknown error';
