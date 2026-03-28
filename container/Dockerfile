@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     plantuml \
     graphviz \
     gnuplot-nox \
+    python3 \
     sqlite3 \
     swi-prolog \
     unzip \
