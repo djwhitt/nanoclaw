@@ -1,5 +1,7 @@
 /**
- * Step: groups — Connect to WhatsApp, fetch group metadata, write to DB.
+ * Step: groups — Fetch group metadata from messaging platforms, write to DB.
+ * WhatsApp requires an upfront sync (Baileys groupFetchAllParticipating).
+ * Other channels discover group names at runtime — this step auto-skips for them.
  * Replaces 05-sync-groups.sh + 05b-list-groups.sh
  */
 import { execSync } from 'child_process';
@@ -62,6 +64,25 @@ async function listGroups(limit: number): Promise<void> {
 }
 
 async function syncGroups(projectRoot: string): Promise<void> {
+  // Only WhatsApp needs an upfront group sync; other channels resolve names at runtime.
+  // Detect WhatsApp by checking for auth credentials on disk.
+  const authDir = path.join(projectRoot, 'store', 'auth');
+  const hasWhatsAppAuth =
+    fs.existsSync(authDir) && fs.readdirSync(authDir).length > 0;
+
+  if (!hasWhatsAppAuth) {
+    logger.info('WhatsApp auth not found — skipping group sync');
+    emitStatus('SYNC_GROUPS', {
+      BUILD: 'skipped',
+      SYNC: 'skipped',
+      GROUPS_IN_DB: 0,
+      REASON: 'whatsapp_not_configured',
+      STATUS: 'success',
+      LOG: 'logs/setup.log',
+    });
+    return;
+  }
+
   // Build TypeScript first
   logger.info('Building TypeScript');
   let buildOk = false;
@@ -85,18 +106,18 @@ async function syncGroups(projectRoot: string): Promise<void> {
     process.exit(1);
   }
 
-  // Run inline sync script via node
+  // Run sync script via a temp file to avoid shell escaping issues with node -e
   logger.info('Fetching group metadata');
   let syncOk = false;
   try {
     const syncScript = `
-import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } from '@whiskeysockets/baileys';
-import pino from 'pino';
+import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
 
-const logger = pino({ level: 'silent' });
+const noop = () => {};
+const logger = { level: 'silent', trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child: () => logger };
 const authDir = path.join('store', 'auth');
 const dbPath = path.join('store', 'messages.db');
 
@@ -114,8 +135,10 @@ const upsert = db.prepare(
 );
 
 const { state, saveCreds } = await useMultiFileAuthState(authDir);
+const { version } = await fetchLatestWaWebVersion({}).catch(() => ({ version: undefined }));
 
 const sock = makeWASocket({
+  version,
   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
   printQRInTerminal: false,
   logger,
@@ -158,17 +181,20 @@ sock.ev.on('connection.update', async (update) => {
 });
 `;
 
-    const output = execSync(
-      `node --input-type=module -e ${JSON.stringify(syncScript)}`,
-      {
+    const tmpScript = path.join(projectRoot, '.tmp-group-sync.mjs');
+    fs.writeFileSync(tmpScript, syncScript, 'utf-8');
+    try {
+      const output = execSync(`node ${tmpScript}`, {
         cwd: projectRoot,
         encoding: 'utf-8',
         timeout: 45000,
         stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    syncOk = output.includes('SYNCED:');
-    logger.info({ output: output.trim() }, 'Sync output');
+      });
+      syncOk = output.includes('SYNCED:');
+      logger.info({ output: output.trim() }, 'Sync output');
+    } finally {
+      try { fs.unlinkSync(tmpScript); } catch { /* ignore cleanup errors */ }
+    }
   } catch (err) {
     logger.error({ err }, 'Sync failed');
   }

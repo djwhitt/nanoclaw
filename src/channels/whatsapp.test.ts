@@ -8,6 +8,7 @@ vi.mock('../config.js', () => ({
   STORE_DIR: '/tmp/nanoclaw-test-store',
   ASSISTANT_NAME: 'Andy',
   ASSISTANT_HAS_OWN_NUMBER: false,
+  MAX_ATTACHMENT_DOWNLOAD_SIZE: 25 * 1024 * 1024,
 }));
 
 // Mock logger
@@ -27,6 +28,12 @@ vi.mock('../db.js', () => ({
   updateChatName: vi.fn(),
 }));
 
+vi.mock('../group-folder.js', () => ({
+  resolveGroupFolderPath: vi.fn((folder: string) => `/tmp/nanoclaw-test-groups/${folder}`),
+  resolveGroupIpcPath: vi.fn((folder: string) => `/tmp/nanoclaw-test-ipc/${folder}`),
+  isValidGroupFolder: vi.fn(() => true),
+}));
+
 // Mock fs
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
@@ -36,6 +43,8 @@ vi.mock('fs', async () => {
       ...actual,
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      writeFileSync: vi.fn(),
+      readdirSync: vi.fn(() => ['creds.json']),
     },
   };
 });
@@ -84,6 +93,7 @@ vi.mock('@whiskeysockets/baileys', () => {
       timedOut: 408,
       restartRequired: 515,
     },
+    downloadMediaMessage: vi.fn().mockResolvedValue(Buffer.from('fake-image-data')),
     fetchLatestWaWebVersion: vi
       .fn()
       .mockResolvedValue({ version: [2, 3000, 0] }),
@@ -500,7 +510,15 @@ describe('WhatsAppChannel', () => {
 
       expect(opts.onMessage).toHaveBeenCalledWith(
         'registered@g.us',
-        expect.objectContaining({ content: 'Check this photo' }),
+        expect.objectContaining({
+          content: expect.stringContaining('Check this photo'),
+          attachments: [
+            expect.objectContaining({
+              mimeType: 'image/jpeg',
+              isImage: true,
+            }),
+          ],
+        }),
       );
     });
 
@@ -528,11 +546,19 @@ describe('WhatsAppChannel', () => {
 
       expect(opts.onMessage).toHaveBeenCalledWith(
         'registered@g.us',
-        expect.objectContaining({ content: 'Watch this' }),
+        expect.objectContaining({
+          content: expect.stringContaining('Watch this'),
+          attachments: [
+            expect.objectContaining({
+              mimeType: 'video/mp4',
+              isImage: false,
+            }),
+          ],
+        }),
       );
     });
 
-    it('handles message with no extractable text (e.g. voice note without caption)', async () => {
+    it('delivers voice note as media attachment', async () => {
       const opts = createTestOpts();
       const channel = new WhatsAppChannel(opts);
 
@@ -554,8 +580,19 @@ describe('WhatsAppChannel', () => {
         },
       ]);
 
-      // Skipped — no text content to process
-      expect(opts.onMessage).not.toHaveBeenCalled();
+      expect(opts.onMessage).toHaveBeenCalledWith(
+        'registered@g.us',
+        expect.objectContaining({
+          id: 'msg-8',
+          sender_name: 'Frank',
+          attachments: [
+            expect.objectContaining({
+              mimeType: 'audio/ogg; codecs=opus',
+              isImage: false,
+            }),
+          ],
+        }),
+      );
     });
 
     it('uses sender JID when pushName is absent', async () => {

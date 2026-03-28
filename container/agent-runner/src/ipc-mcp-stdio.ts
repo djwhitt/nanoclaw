@@ -379,7 +379,9 @@ Use available_groups.json to find the JID for a group. The folder name must be c
   },
 );
 
-// --- Discord UI components ---
+// --- Discord UI components (only registered for Discord channels) ---
+
+if (chatJid.startsWith('dc:')) {
 
 const IpcButtonSchema = z.object({
   type: z.literal('button'),
@@ -429,13 +431,6 @@ COMPONENT RULES:
     components: z.array(IpcActionRowSchema).describe('Array of action rows containing buttons and/or select menus'),
   },
   async (args) => {
-    if (!chatJid.startsWith('dc:')) {
-      return {
-        content: [{ type: 'text' as const, text: 'send_components is only supported for Discord channels (chatJid must start with "dc:").' }],
-        isError: true,
-      };
-    }
-
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const data = {
@@ -491,13 +486,6 @@ Requires the message ID returned by send_components.`,
     components: z.array(IpcActionRowSchema).optional().describe('New components (omit to keep existing, pass empty array to remove all)'),
   },
   async (args) => {
-    if (!chatJid.startsWith('dc:')) {
-      return {
-        content: [{ type: 'text' as const, text: 'update_components is only supported for Discord channels (chatJid must start with "dc:").' }],
-        isError: true,
-      };
-    }
-
     const data: Record<string, unknown> = {
       type: 'update_components',
       chatJid,
@@ -513,6 +501,8 @@ Requires the message ID returned by send_components.`,
     return { content: [{ type: 'text' as const, text: `Components update requested for message ${args.message_id}.` }] };
   },
 );
+
+} // end Discord-only tools
 
 // Start the stdio transport
 const transport = new StdioServerTransport();

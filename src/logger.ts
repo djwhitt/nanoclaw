@@ -59,17 +59,39 @@ function log(
   }
 }
 
-export const logger = {
-  debug: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('debug', dataOrMsg, msg),
-  info: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('info', dataOrMsg, msg),
-  warn: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('warn', dataOrMsg, msg),
-  error: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('error', dataOrMsg, msg),
-  fatal: (dataOrMsg: Record<string, unknown> | string, msg?: string) =>
-    log('fatal', dataOrMsg, msg),
+type LogFn = (dataOrMsg: unknown, msg?: string) => void;
+
+interface Logger {
+  level: string;
+  debug: LogFn;
+  info: LogFn;
+  warn: LogFn;
+  error: LogFn;
+  fatal: LogFn;
+  trace: LogFn;
+  child: (obj: Record<string, unknown>) => Logger;
+}
+
+function coerce(
+  dataOrMsg: unknown,
+  msg?: string,
+): [Record<string, unknown> | string, string | undefined] {
+  if (typeof dataOrMsg === 'string') return [dataOrMsg, msg];
+  if (dataOrMsg && typeof dataOrMsg === 'object')
+    return [dataOrMsg as Record<string, unknown>, msg];
+  return [String(dataOrMsg), msg];
+}
+
+export const logger: Logger = {
+  level: (process.env.LOG_LEVEL as Level) || 'info',
+  debug: (d, m) => log('debug', ...coerce(d, m)),
+  info: (d, m) => log('info', ...coerce(d, m)),
+  warn: (d, m) => log('warn', ...coerce(d, m)),
+  error: (d, m) => log('error', ...coerce(d, m)),
+  fatal: (d, m) => log('fatal', ...coerce(d, m)),
+  // Baileys (WhatsApp) expects a pino-compatible logger with trace + child
+  trace: (d, m) => log('debug', ...coerce(d, m)),
+  child: () => logger,
 };
 
 // Route uncaught errors through logger so they get timestamps in stderr
